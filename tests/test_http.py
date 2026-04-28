@@ -3,14 +3,15 @@ from unittest.mock import patch
 import pytest
 import requests
 
-from must_gather_downloader.server import (
-    _download_tarball,
+from must_gather_downloader.download import _download_tarball
+from must_gather_downloader.reportportal import (
     _fetch_html_lines,
     _fetch_json,
     _rp_headers,
 )
 
-MODULE = "must_gather_downloader.server"
+RP_MODULE = "must_gather_downloader.reportportal"
+DL_MODULE = "must_gather_downloader.download"
 
 
 class TestRpHeaders:
@@ -21,7 +22,7 @@ class TestRpHeaders:
 
 
 class TestFetchJson:
-    @patch(f"{MODULE}.requests.get")
+    @patch(f"{RP_MODULE}.requests.get")
     def test_success(self, mock_get, make_mock_response):
         expected = {"content": [{"id": 1}]}
         mock_get.return_value = make_mock_response(json_data=expected)
@@ -31,13 +32,13 @@ class TestFetchJson:
         call_kwargs = mock_get.call_args
         assert call_kwargs.kwargs["timeout"] == 30
 
-    @patch(f"{MODULE}.requests.get")
+    @patch(f"{RP_MODULE}.requests.get")
     def test_http_error(self, mock_get, make_mock_response):
         mock_get.return_value = make_mock_response(status_code=404)
         with pytest.raises(requests.HTTPError):
             _fetch_json("https://rp.example.com/api/v1/ocs/launch", "key")
 
-    @patch(f"{MODULE}.requests.get")
+    @patch(f"{RP_MODULE}.requests.get")
     def test_timeout(self, mock_get):
         mock_get.side_effect = requests.Timeout("timed out")
         with pytest.raises(requests.Timeout):
@@ -45,7 +46,7 @@ class TestFetchJson:
 
 
 class TestFetchHtmlLines:
-    @patch(f"{MODULE}.requests.get")
+    @patch(f"{RP_MODULE}.requests.get")
     def test_with_api_key(self, mock_get, make_mock_response):
         mock_get.return_value = make_mock_response(text="line1\nline2\n")
         result = _fetch_html_lines("https://magna.example.com/dir/", "my-key")
@@ -55,7 +56,7 @@ class TestFetchHtmlLines:
         )
         assert "Authorization" in call_headers
 
-    @patch(f"{MODULE}.requests.get")
+    @patch(f"{RP_MODULE}.requests.get")
     def test_without_api_key(self, mock_get, make_mock_response):
         mock_get.return_value = make_mock_response(text="line1\n")
         _fetch_html_lines("https://magna.example.com/dir/")
@@ -64,7 +65,7 @@ class TestFetchHtmlLines:
         )
         assert "Authorization" not in call_headers
 
-    @patch(f"{MODULE}.requests.get")
+    @patch(f"{RP_MODULE}.requests.get")
     def test_filters_blank_lines(self, mock_get, make_mock_response):
         mock_get.return_value = make_mock_response(text="line1\n\n  \nline2\n")
         result = _fetch_html_lines("https://magna.example.com/dir/")
@@ -72,7 +73,7 @@ class TestFetchHtmlLines:
 
 
 class TestDownloadTarball:
-    @patch(f"{MODULE}.requests.get")
+    @patch(f"{DL_MODULE}.requests.get")
     def test_writes_content(self, mock_get, tmp_path, make_mock_response):
         resp = make_mock_response()
         resp.iter_content.return_value = iter([b"chunk1", b"chunk2"])
@@ -81,7 +82,7 @@ class TestDownloadTarball:
         _download_tarball("https://magna.example.com/file.tar.gz", dest)
         assert dest.read_bytes() == b"chunk1chunk2"
 
-    @patch(f"{MODULE}.requests.get")
+    @patch(f"{DL_MODULE}.requests.get")
     def test_with_api_key(self, mock_get, tmp_path, make_mock_response):
         mock_get.return_value = make_mock_response()
         dest = tmp_path / "out.tar.gz"
@@ -91,7 +92,7 @@ class TestDownloadTarball:
         )
         assert call_headers.get("Authorization") == "Bearer my-key"
 
-    @patch(f"{MODULE}.requests.get")
+    @patch(f"{DL_MODULE}.requests.get")
     def test_http_error(self, mock_get, tmp_path, make_mock_response):
         mock_get.return_value = make_mock_response(status_code=500)
         dest = tmp_path / "out.tar.gz"

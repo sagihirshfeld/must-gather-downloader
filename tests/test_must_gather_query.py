@@ -2,17 +2,16 @@ import json
 
 import pytest
 
-from must_gather_downloader.server import (
+from must_gather_downloader.navigate import _find_must_gather_root
+from must_gather_downloader.noobaa import get_noobaa_resource
+from must_gather_downloader.pod_logs import get_must_gather_pod_logs
+from must_gather_downloader.resources import get_must_gather_resource, list_must_gather_contents
+from must_gather_downloader.search import search_must_gather
+from must_gather_downloader.text import (
     _filter_log_by_time,
-    _find_must_gather_root,
     _strip_managed_fields,
     _strip_yaml_keys,
     _tail_yaml_list,
-    get_must_gather_resource,
-    get_must_gather_pod_logs,
-    get_noobaa_resource,
-    list_must_gather_contents,
-    search_must_gather,
 )
 
 

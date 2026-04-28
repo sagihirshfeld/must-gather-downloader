@@ -2,14 +2,9 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from must_gather_downloader.server import (
-    _cache_check,
-    _count_files,
-    _extract_tarball,
-    list_must_gather_cache,
-)
-
-MODULE = "must_gather_downloader.server"
+from must_gather_downloader.cache import _cache_check, list_must_gather_cache
+from must_gather_downloader.download import _extract_tarball
+from must_gather_downloader.navigate import _count_files
 
 
 class TestCacheCheck:

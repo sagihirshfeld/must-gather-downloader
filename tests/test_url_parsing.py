@@ -1,6 +1,6 @@
 import pytest
 
-from must_gather_downloader.server import _extract_hrefs, _extract_ids, _safe_test_name
+from must_gather_downloader.reportportal import _extract_hrefs, _extract_ids, _safe_test_name
 
 
 class TestExtractIds:

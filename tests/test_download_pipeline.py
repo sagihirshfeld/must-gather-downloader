@@ -5,9 +5,9 @@ from unittest.mock import call, patch
 
 import pytest
 
-from must_gather_downloader.server import download_must_gather
+from must_gather_downloader.download import download_must_gather
 
-MODULE = "must_gather_downloader.server"
+MODULE = "must_gather_downloader.download"
 
 
 @pytest.fixture
