@@ -5,6 +5,7 @@ import pytest
 from must_gather_downloader.server import (
     _find_must_gather_root,
     get_must_gather_resource,
+    get_must_gather_pod_logs,
     list_must_gather_contents,
     search_must_gather,
 )
@@ -306,3 +307,187 @@ class TestSearchMustGather:
         result = json.loads(search_must_gather(str(must_gather_tree["extracted"]), "CrashLoopBackOff"))
         for m in result["matches"]:
             assert not m["file"].startswith("/")
+
+
+class TestGetMustGatherPodLogs:
+    def test_list_pods(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_pod_logs(str(must_gather_tree["extracted"]), "openshift-storage")
+        )
+        assert result["namespace"] == "openshift-storage"
+        assert result["available_pods"] == [
+            "noobaa-core-0",
+            "rook-ceph-mon-a-abc123",
+            "rook-ceph-osd-0-def456",
+        ]
+        assert result["hint"] == "Specify pod_name to retrieve logs"
+
+    def test_get_specific_pod_logs(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_pod_logs(
+                str(must_gather_tree["extracted"]),
+                "openshift-storage",
+                pod_name="rook-ceph-mon-a-abc123",
+            )
+        )
+        assert result["total_logs_found"] == 1
+        log = result["logs"][0]
+        assert log["pod"] == "rook-ceph-mon-a-abc123"
+        assert log["container"] == "mon"
+        assert log["log_file"] == "current.log"
+        assert "mon current log" in log["content"]
+
+    def test_pod_name_substring_match(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_pod_logs(
+                str(must_gather_tree["extracted"]),
+                "openshift-storage",
+                pod_name="rook-ceph-mon",
+            )
+        )
+        assert result["total_logs_found"] == 1
+        assert result["logs"][0]["pod"] == "rook-ceph-mon-a-abc123"
+
+    def test_previous_logs(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_pod_logs(
+                str(must_gather_tree["extracted"]),
+                "openshift-storage",
+                pod_name="rook-ceph-mon-a-abc123",
+                previous=True,
+            )
+        )
+        assert result["total_logs_found"] == 1
+        log = result["logs"][0]
+        assert log["log_file"] == "previous.log"
+        assert "mon previous log" in log["content"]
+
+    def test_previous_log_not_found(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_pod_logs(
+                str(must_gather_tree["extracted"]),
+                "openshift-storage",
+                pod_name="rook-ceph-osd-0-def456",
+                previous=True,
+            )
+        )
+        assert result["total_logs_found"] == 0
+        assert result["logs"] == []
+
+    def test_specific_container(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_pod_logs(
+                str(must_gather_tree["extracted"]),
+                "openshift-storage",
+                pod_name="rook-ceph-mon-a-abc123",
+                container="mon",
+            )
+        )
+        assert result["total_logs_found"] == 1
+        assert result["logs"][0]["container"] == "mon"
+
+    def test_container_not_found(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_pod_logs(
+                str(must_gather_tree["extracted"]),
+                "openshift-storage",
+                pod_name="rook-ceph-mon-a-abc123",
+                container="nonexistent",
+            )
+        )
+        assert result["total_logs_found"] == 0
+        assert result["logs"] == []
+
+    def test_multi_container_pod(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_pod_logs(
+                str(must_gather_tree["extracted"]),
+                "openshift-storage",
+                pod_name="noobaa-core-0",
+            )
+        )
+        assert result["total_logs_found"] == 2
+        containers = sorted(log["container"] for log in result["logs"])
+        assert containers == ["init-container", "noobaa-core"]
+
+    def test_tail_lines(self, must_gather_tree):
+        log_path = (
+            must_gather_tree["root"] / "namespaces" / "openshift-storage" / "core" / "pods"
+            / "rook-ceph-mon-a-abc123" / "mon" / "mon" / "current.log"
+        )
+        log_path.write_text("\n".join(f"mon log line {i}" for i in range(50)) + "\n")
+        result = json.loads(
+            get_must_gather_pod_logs(
+                str(must_gather_tree["extracted"]),
+                "openshift-storage",
+                pod_name="rook-ceph-mon-a-abc123",
+                tail=10,
+            )
+        )
+        log = result["logs"][0]
+        assert log["lines"] == 10
+        assert "mon log line 49" in log["content"]
+        assert "mon log line 39" not in log["content"]
+
+    def test_namespace_not_found(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_pod_logs(
+                str(must_gather_tree["extracted"]), "nonexistent"
+            )
+        )
+        assert "error" in result
+        assert "available_namespaces" in result
+        assert "openshift-storage" in result["available_namespaces"]
+
+    def test_pod_not_found(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_pod_logs(
+                str(must_gather_tree["extracted"]),
+                "openshift-storage",
+                pod_name="nonexistent",
+            )
+        )
+        assert "error" in result
+        assert "available_pods" in result
+        assert "rook-ceph-mon-a-abc123" in result["available_pods"]
+
+    def test_large_log_truncation(self, must_gather_tree):
+        log_path = (
+            must_gather_tree["root"] / "namespaces" / "openshift-storage" / "core" / "pods"
+            / "rook-ceph-mon-a-abc123" / "mon" / "mon" / "current.log"
+        )
+        large_content = "\n".join(f"line {i} " + "x" * 200 for i in range(2000)) + "\n"
+        log_path.write_text(large_content)
+        result = json.loads(
+            get_must_gather_pod_logs(
+                str(must_gather_tree["extracted"]),
+                "openshift-storage",
+                pod_name="rook-ceph-mon-a-abc123",
+            )
+        )
+        log = result["logs"][0]
+        assert log["truncated"] is True
+        assert len(log["content"].encode("utf-8")) <= 200 * 1024 + 1024
+
+    def test_log_structure(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_pod_logs(
+                str(must_gather_tree["extracted"]),
+                "openshift-storage",
+                pod_name="rook-ceph-osd-0-def456",
+            )
+        )
+        log = result["logs"][0]
+        assert set(log.keys()) == {"pod", "container", "log_file", "lines", "content", "truncated"}
+
+    def test_multiple_pods_matching(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_pod_logs(
+                str(must_gather_tree["extracted"]),
+                "openshift-storage",
+                pod_name="rook-ceph",
+            )
+        )
+        assert result["total_logs_found"] == 2
+        pods = sorted(log["pod"] for log in result["logs"])
+        assert pods == ["rook-ceph-mon-a-abc123", "rook-ceph-osd-0-def456"]
