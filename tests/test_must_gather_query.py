@@ -5,6 +5,7 @@ import pytest
 from must_gather_downloader.server import (
     _find_must_gather_root,
     _strip_managed_fields,
+    _strip_yaml_keys,
     _tail_yaml_list,
     get_must_gather_resource,
     get_must_gather_pod_logs,
@@ -105,6 +106,36 @@ class TestStripManagedFields:
         assert "managedFields" not in result
         assert "name: first" in result
         assert "name: second" in result
+
+
+class TestStripYamlKeys:
+    def test_strips_multiple_keys(self):
+        content = (
+            "metadata:\n"
+            "  name: node-1\n"
+            "  managedFields:\n"
+            "  - manager: kubelet\n"
+            "status:\n"
+            "  conditions:\n"
+            "  - type: Ready\n"
+            "  images:\n"
+            "  - names:\n"
+            "    - quay.io/image@sha256:abc\n"
+            "    sizeBytes: 123456\n"
+            "  - names:\n"
+            "    - quay.io/image@sha256:def\n"
+            "    sizeBytes: 789012\n"
+            "  nodeInfo:\n"
+            "    kubeletVersion: v1.28.0\n"
+        )
+        result = _strip_yaml_keys(content, ["managedFields", "images"])
+        assert "managedFields" not in result
+        assert "images" not in result
+        assert "sha256" not in result
+        assert "sizeBytes" not in result
+        assert "name: node-1" in result
+        assert "type: Ready" in result
+        assert "kubeletVersion" in result
 
 
 class TestTailYamlList:
@@ -278,13 +309,16 @@ class TestGetMustGatherResource:
         assert "CrashLoopBackOff" in result["content"]
         assert "Scheduled" in result["content"]
 
-    def test_node_managed_fields_stripped(self, must_gather_tree):
+    def test_node_managed_fields_and_images_stripped(self, must_gather_tree):
         node_file = (
             must_gather_tree["root"] / "cluster-scoped-resources" / "core"
             / "nodes" / "master-0.yaml"
         )
         content = node_file.read_text()
-        content += "  managedFields:\n  - manager: test\n    apiVersion: v1\n"
+        content += (
+            "  managedFields:\n  - manager: test\n    apiVersion: v1\n"
+            "  images:\n  - names:\n    - quay.io/img@sha256:abc\n    sizeBytes: 999\n"
+        )
         node_file.write_text(content)
         result = json.loads(
             get_must_gather_resource(
@@ -292,6 +326,8 @@ class TestGetMustGatherResource:
             )
         )
         assert "managedFields" not in result["content"]
+        assert "images" not in result["content"]
+        assert "sha256" not in result["content"]
         assert "kind: Node" in result["content"]
 
     def test_namespaced_resource_no_namespace(self, must_gather_tree):

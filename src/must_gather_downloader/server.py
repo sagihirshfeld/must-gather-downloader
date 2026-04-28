@@ -465,7 +465,8 @@ def list_must_gather_contents(must_gather_path: str) -> str:
 
 
 
-def _strip_managed_fields(content: str) -> str:
+def _strip_yaml_keys(content: str, keys: list[str]) -> str:
+    triggers = tuple(k + ":" for k in keys)
     lines = content.split("\n")
     result = []
     skip = False
@@ -477,7 +478,7 @@ def _strip_managed_fields(content: str) -> str:
             continue
         indent = len(line) - len(line.lstrip())
         stripped = line.lstrip()
-        if stripped.startswith("managedFields:"):
+        if any(stripped.startswith(t) for t in triggers):
             skip = True
             base_indent = indent
             continue
@@ -489,6 +490,10 @@ def _strip_managed_fields(content: str) -> str:
             skip = False
         result.append(line)
     return "\n".join(result)
+
+
+def _strip_managed_fields(content: str) -> str:
+    return _strip_yaml_keys(content, ["managedFields"])
 
 
 def _tail_yaml_list(content: str, count: int) -> tuple[str, int]:
@@ -597,7 +602,10 @@ def get_must_gather_resource(
             if not resource_file.is_file():
                 return json.dumps({"error": f"Resource not found: {rt} '{name}'"})
             content = resource_file.read_text(encoding="utf-8", errors="replace")
-            content = _strip_managed_fields(content)
+            strip_keys = ["managedFields"]
+            if rt == "node":
+                strip_keys.append("images")
+            content = _strip_yaml_keys(content, strip_keys)
             result = {
                 "resource_type": rt,
                 "name": name,
