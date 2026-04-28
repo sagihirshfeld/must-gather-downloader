@@ -103,7 +103,15 @@ def must_gather_tree(tmp_path):
     (os_ns / "core").mkdir(parents=True)
     (os_ns / "core" / "events.yaml").write_text(
         "apiVersion: v1\nkind: EventList\nitems:\n"
-        "  - reason: CrashLoopBackOff\n    message: back-off restarting\n"
+        "- reason: Created\n  message: pod created\n"
+        "  metadata:\n    managedFields:\n    - manager: kubelet\n"
+        "      apiVersion: v1\n    name: ev-1\n"
+        "- reason: Scheduled\n  message: pod scheduled\n"
+        "  metadata:\n    managedFields:\n    - manager: scheduler\n"
+        "      apiVersion: v1\n    name: ev-2\n"
+        "- reason: CrashLoopBackOff\n  message: back-off restarting\n"
+        "  metadata:\n    managedFields:\n    - manager: kubelet\n"
+        "      apiVersion: v1\n    name: ev-3\n"
     )
 
     pods_yaml_dir = os_ns / "core" / "pods"

@@ -465,6 +465,42 @@ def list_must_gather_contents(must_gather_path: str) -> str:
 
 
 
+def _strip_managed_fields(content: str) -> str:
+    lines = content.split("\n")
+    result = []
+    skip = False
+    base_indent = 0
+    for line in lines:
+        if not line.strip():
+            if not skip:
+                result.append(line)
+            continue
+        indent = len(line) - len(line.lstrip())
+        stripped = line.lstrip()
+        if stripped.startswith("managedFields:"):
+            skip = True
+            base_indent = indent
+            continue
+        if skip:
+            if indent > base_indent or (
+                indent == base_indent and stripped.startswith("- ")
+            ):
+                continue
+            skip = False
+        result.append(line)
+    return "\n".join(result)
+
+
+def _tail_yaml_list(content: str, count: int) -> tuple[str, int]:
+    parts = re.split(r"(?=^- )", content, flags=re.MULTILINE)
+    header = parts[0]
+    items = parts[1:]
+    total = len(items)
+    if count and len(items) > count:
+        items = items[-count:]
+    return header + "".join(items), total
+
+
 _RESOURCE_ALIASES = {
     "pv": "persistentvolume",
     "sc": "storageclass",
@@ -507,11 +543,13 @@ def get_must_gather_resource(
     resource_type: str,
     name: str = "",
     namespace: str = "",
+    tail: int = 0,
 ) -> str:
     """Retrieve a specific resource from a must-gather extraction.
 
     Maps logical resource names to their file paths within the must-gather
-    directory structure and returns their content.
+    directory structure and returns their content. Kubernetes YAML resources
+    are automatically cleaned (managedFields stripped) for readability.
 
     Args:
         must_gather_path: Path to the extracted must-gather directory
@@ -520,6 +558,7 @@ def get_must_gather_resource(
             osdtree, osddump)
         name: Name of the specific resource (optional — omit to list available names)
         namespace: Namespace for namespaced resources (required for events, pod, etc.)
+        tail: For events, return only the last N events (0 = all, default 0)
 
     Returns:
         JSON string with resource content or available names listing
@@ -558,6 +597,7 @@ def get_must_gather_resource(
             if not resource_file.is_file():
                 return json.dumps({"error": f"Resource not found: {rt} '{name}'"})
             content = resource_file.read_text(encoding="utf-8", errors="replace")
+            content = _strip_managed_fields(content)
             result = {
                 "resource_type": rt,
                 "name": name,
@@ -596,16 +636,25 @@ def get_must_gather_resource(
             if not events_file.is_file():
                 return json.dumps({"error": f"Resource not found: {rt} in namespace '{namespace}'"})
             content = events_file.read_text(encoding="utf-8", errors="replace")
+            content = _strip_managed_fields(content)
+            total_events = None
+            if tail > 0:
+                content, total_events = _tail_yaml_list(content, tail)
             result = {
                 "resource_type": rt,
                 "namespace": namespace,
                 "path": str(events_file),
                 "content": content,
             }
+            if total_events is not None:
+                result["total_events"] = total_events
+                result["showing_last"] = min(tail, total_events)
             if len(content.encode("utf-8")) > _MAX_RESOURCE_SIZE:
                 result["content"] = content[:_MAX_RESOURCE_SIZE]
                 result["truncated"] = True
                 result["total_size_bytes"] = events_file.stat().st_size
+                if not tail:
+                    result["hint"] = "Use tail parameter to limit events (e.g. tail=100)"
             return json.dumps(result)
 
         resource_dir = namespaces_dir / namespace / api_group / resource_path
@@ -616,6 +665,7 @@ def get_must_gather_resource(
             if not resource_file.is_file():
                 return json.dumps({"error": f"Resource not found: {rt} '{name}' in namespace '{namespace}'"})
             content = resource_file.read_text(encoding="utf-8", errors="replace")
+            content = _strip_managed_fields(content)
             result = {
                 "resource_type": rt,
                 "name": name,

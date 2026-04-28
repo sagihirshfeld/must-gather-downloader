@@ -4,6 +4,8 @@ import pytest
 
 from must_gather_downloader.server import (
     _find_must_gather_root,
+    _strip_managed_fields,
+    _tail_yaml_list,
     get_must_gather_resource,
     get_must_gather_pod_logs,
     list_must_gather_contents,
@@ -58,6 +60,81 @@ class TestFindMustGatherRoot:
         empty.mkdir()
         with pytest.raises(ValueError, match="No subdirectories"):
             _find_must_gather_root(str(empty))
+
+
+class TestStripManagedFields:
+    def test_strips_managed_fields_block(self):
+        content = (
+            "apiVersion: v1\n"
+            "metadata:\n"
+            "  name: test\n"
+            "  managedFields:\n"
+            "  - apiVersion: v1\n"
+            "    fieldsType: FieldsV1\n"
+            "    fieldsV1:\n"
+            "      f:data: {}\n"
+            "    manager: kubectl\n"
+            "  namespace: default\n"
+            "spec:\n"
+            "  key: value\n"
+        )
+        result = _strip_managed_fields(content)
+        assert "managedFields" not in result
+        assert "fieldsV1" not in result
+        assert "manager: kubectl" not in result
+        assert "namespace: default" in result
+        assert "spec:" in result
+
+    def test_preserves_content_without_managed_fields(self):
+        content = "apiVersion: v1\nkind: Pod\nmetadata:\n  name: test\n"
+        assert _strip_managed_fields(content) == content
+
+    def test_handles_multiple_managed_fields(self):
+        content = (
+            "items:\n"
+            "- metadata:\n"
+            "    managedFields:\n"
+            "    - manager: a\n"
+            "    name: first\n"
+            "- metadata:\n"
+            "    managedFields:\n"
+            "    - manager: b\n"
+            "    name: second\n"
+        )
+        result = _strip_managed_fields(content)
+        assert "managedFields" not in result
+        assert "name: first" in result
+        assert "name: second" in result
+
+
+class TestTailYamlList:
+    def test_tails_items(self):
+        content = (
+            "apiVersion: v1\nitems:\n"
+            "- name: event1\n  data: a\n"
+            "- name: event2\n  data: b\n"
+            "- name: event3\n  data: c\n"
+        )
+        result, total = _tail_yaml_list(content, 2)
+        assert total == 3
+        assert "event1" not in result
+        assert "event2" in result
+        assert "event3" in result
+        assert "apiVersion: v1" in result
+
+    def test_count_zero_returns_all(self):
+        content = "header:\n- item1\n- item2\n"
+        result, total = _tail_yaml_list(content, 0)
+        assert total == 2
+        assert "item1" in result
+        assert "item2" in result
+
+    def test_count_exceeds_items(self):
+        content = "header:\n- item1\n- item2\n"
+        result, total = _tail_yaml_list(content, 100)
+        assert total == 2
+        assert "item1" in result
+        assert "item2" in result
 
 
 class TestListMustGatherContents:
@@ -173,6 +250,49 @@ class TestGetMustGatherResource:
         )
         assert result["resource_type"] == "events"
         assert "CrashLoopBackOff" in result["content"]
+
+    def test_events_managed_fields_stripped(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]),
+                "events",
+                namespace="openshift-storage",
+            )
+        )
+        assert "managedFields" not in result["content"]
+        assert "manager: kubelet" not in result["content"]
+        assert "CrashLoopBackOff" in result["content"]
+
+    def test_events_tail(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]),
+                "events",
+                namespace="openshift-storage",
+                tail=2,
+            )
+        )
+        assert result["total_events"] == 3
+        assert result["showing_last"] == 2
+        assert "Created" not in result["content"]
+        assert "CrashLoopBackOff" in result["content"]
+        assert "Scheduled" in result["content"]
+
+    def test_node_managed_fields_stripped(self, must_gather_tree):
+        node_file = (
+            must_gather_tree["root"] / "cluster-scoped-resources" / "core"
+            / "nodes" / "master-0.yaml"
+        )
+        content = node_file.read_text()
+        content += "  managedFields:\n  - manager: test\n    apiVersion: v1\n"
+        node_file.write_text(content)
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]), "node", name="master-0"
+            )
+        )
+        assert "managedFields" not in result["content"]
+        assert "kind: Node" in result["content"]
 
     def test_namespaced_resource_no_namespace(self, must_gather_tree):
         result = json.loads(
