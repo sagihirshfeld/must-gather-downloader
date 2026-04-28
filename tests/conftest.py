@@ -124,7 +124,14 @@ def must_gather_tree(tmp_path):
 
     mon_pod = pods_dir / "rook-ceph-mon-a-abc123" / "mon" / "mon" / "logs"
     mon_pod.mkdir(parents=True)
-    (mon_pod / "current.log").write_text("mon current log\n")
+    (mon_pod / "current.log").write_text(
+        "2025-01-15T03:37:00.000Z normal line before window\n"
+        "2025-01-15T03:38:30.000Z line inside window\n"
+        "  stack trace continuation\n"
+        "2025-01-15T03:39:00.000Z another inside window\n"
+        "2025-01-15T03:41:30.000Z line after window\n"
+        "2025-01-15T03:42:00.000Z final line\n"
+    )
     (mon_pod / "previous.log").write_text("mon previous log\n")
 
     osd_pod = pods_dir / "rook-ceph-osd-0-def456" / "osd" / "osd" / "logs"
@@ -158,6 +165,49 @@ def must_gather_tree(tmp_path):
         "apiVersion: v1\nkind: Secret\nmetadata:\n  name: rook-ceph-admin\n"
     )
 
+    # NooBaa CRD resources under main must-gather tree
+    obc_dir = os_ns / "objectbucket.io" / "objectbucketclaims"
+    obc_dir.mkdir(parents=True)
+    (obc_dir / "my-obc.yaml").write_text(
+        "apiVersion: objectbucket.io/v1alpha1\nkind: ObjectBucketClaim\n"
+        "metadata:\n  name: my-obc\n  namespace: openshift-storage\n"
+    )
+
+    ob_dir = root / "cluster-scoped-resources" / "objectbucket.io" / "objectbuckets"
+    ob_dir.mkdir(parents=True)
+    (ob_dir / "obc-ns-my-obc.yaml").write_text(
+        "apiVersion: objectbucket.io/v1alpha1\nkind: ObjectBucket\n"
+        "metadata:\n  name: obc-ns-my-obc\n"
+    )
+
+    bs_dir = os_ns / "noobaa.io" / "backingstores"
+    bs_dir.mkdir(parents=True)
+    (bs_dir / "noobaa-default-backing-store.yaml").write_text(
+        "apiVersion: noobaa.io/v1alpha1\nkind: BackingStore\n"
+        "metadata:\n  name: noobaa-default-backing-store\n"
+    )
+
+    ns_store_dir = os_ns / "noobaa.io" / "namespacestores"
+    ns_store_dir.mkdir(parents=True)
+    (ns_store_dir / "my-ns-store.yaml").write_text(
+        "apiVersion: noobaa.io/v1alpha1\nkind: NamespaceStore\n"
+        "metadata:\n  name: my-ns-store\n"
+    )
+
+    bc_dir = os_ns / "noobaa.io" / "bucketclasses"
+    bc_dir.mkdir(parents=True)
+    (bc_dir / "noobaa-default-bucket-class.yaml").write_text(
+        "apiVersion: noobaa.io/v1alpha1\nkind: BucketClass\n"
+        "metadata:\n  name: noobaa-default-bucket-class\n"
+    )
+
+    noobaa_cr_dir = os_ns / "noobaa.io" / "noobaas"
+    noobaa_cr_dir.mkdir(parents=True)
+    (noobaa_cr_dir / "noobaa.yaml").write_text(
+        "apiVersion: noobaa.io/v1alpha1\nkind: NooBaa\n"
+        "metadata:\n  name: noobaa\n"
+    )
+
     default_ns = root / "namespaces" / "default" / "core"
     default_ns.mkdir(parents=True)
     (default_ns / "events.yaml").write_text(
@@ -179,6 +229,68 @@ def must_gather_tree(tmp_path):
     host_logs = root / "host_service_logs" / "master-0"
     host_logs.mkdir(parents=True)
     (host_logs / "kubelet.log").write_text("kubelet log line\n")
+
+    # NooBaa subtree (sibling of namespaces/, cluster-scoped-resources/)
+    noobaa = root / "noobaa"
+
+    noobaa_raw = noobaa / "raw_output"
+    noobaa_raw.mkdir(parents=True)
+    (noobaa_raw / "status").write_text(
+        "system-address: https://10.0.0.1:443\n"
+        "backing-stores:\n  noobaa-default-backing-store: OPTIMAL\n"
+    )
+    (noobaa_raw / "db_list.txt").write_text(
+        "       Name       | Size\n"
+        " nbcore            | 48 MB\n"
+        " buckets           | 16 MB\n"
+    )
+
+    # Create a small diagnostics tarball
+    diag_content_dir = tmp_path / "_diag_content"
+    diag_content_dir.mkdir()
+    (diag_content_dir / "noobaa_core_describe.txt").write_text("pod describe output\n")
+    (diag_content_dir / "noobaa_db_dump.json").write_text('{"buckets": []}\n')
+    diag_tarball = noobaa_raw / "noobaa_diagnostics_20250115.tar.gz"
+    with tarfile.open(diag_tarball, "w:gz") as tar:
+        tar.add(diag_content_dir / "noobaa_core_describe.txt", arcname="noobaa_core_describe.txt")
+        tar.add(diag_content_dir / "noobaa_db_dump.json", arcname="noobaa_db_dump.json")
+
+    noobaa_logs = noobaa / "logs" / "openshift-storage"
+    noobaa_logs.mkdir(parents=True)
+    (noobaa_logs / "noobaa_endpoint.log").write_text(
+        "2025-01-15T03:38:00.000Z endpoint started\n"
+        "2025-01-15T03:39:00.000Z request handled\n"
+        "2025-01-15T03:40:00.000Z endpoint stopped\n"
+    )
+    (noobaa_logs / "noobaa_operator.log").write_text("operator log\n")
+
+    cnpg_dir = noobaa / "cnpg_info"
+    cnpg_dir.mkdir(parents=True)
+    (cnpg_dir / "pg_stat_statements").write_text("query | calls | total_time\nSELECT 1 | 100 | 5.2\n")
+    (cnpg_dir / "cnpg_cluster_status").write_text("cluster: noobaa-db\nstatus: healthy\n")
+
+    # NooBaa CRD resources under noobaa subtree
+    noobaa_ns = noobaa / "namespaces" / "openshift-storage"
+    noobaa_obc_dir = noobaa_ns / "objectbucket.io" / "objectbucketclaims"
+    noobaa_obc_dir.mkdir(parents=True)
+    (noobaa_obc_dir / "my-obc.yaml").write_text(
+        "apiVersion: objectbucket.io/v1alpha1\nkind: ObjectBucketClaim\n"
+        "metadata:\n  name: my-obc\n"
+    )
+
+    noobaa_bs_dir = noobaa_ns / "noobaa.io" / "backingstores"
+    noobaa_bs_dir.mkdir(parents=True)
+    (noobaa_bs_dir / "noobaa-default-backing-store.yaml").write_text(
+        "apiVersion: noobaa.io/v1alpha1\nkind: BackingStore\n"
+        "metadata:\n  name: noobaa-default-backing-store\n"
+    )
+
+    noobaa_ob_dir = noobaa / "cluster-scoped-resources" / "objectbucket.io" / "objectbuckets"
+    noobaa_ob_dir.mkdir(parents=True)
+    (noobaa_ob_dir / "obc-ns-my-obc.yaml").write_text(
+        "apiVersion: objectbucket.io/v1alpha1\nkind: ObjectBucket\n"
+        "metadata:\n  name: obc-ns-my-obc\n"
+    )
 
     return {"extracted": tmp_path / "extracted", "root": root}
 

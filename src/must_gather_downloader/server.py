@@ -228,6 +228,30 @@ def _find_must_gather_root(must_gather_path: str) -> Path:
     return subdirs[0]
 
 
+def _find_noobaa_dir(root: Path) -> Path:
+    noobaa_dir = root / "noobaa"
+    if not noobaa_dir.is_dir():
+        raise ValueError("No noobaa/ directory found in this must-gather")
+    return noobaa_dir
+
+
+def _ensure_noobaa_diagnostics_extracted(noobaa_dir: Path) -> Path | None:
+    raw_output = noobaa_dir / "raw_output"
+    if not raw_output.is_dir():
+        return None
+    tarballs = sorted(raw_output.glob("noobaa_diagnostics_*.tar.gz"))
+    if not tarballs:
+        return None
+    tarball = tarballs[0]
+    extract_dir = raw_output / ".diagnostics_extracted"
+    if extract_dir.is_dir() and any(extract_dir.iterdir()):
+        return extract_dir
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(tarball, "r:*") as tar:
+        tar.extractall(path=extract_dir, filter="data")
+    return extract_dir
+
+
 def _count_files(directory: Path) -> int:
     return sum(1 for _ in directory.rglob("*") if _.is_file())
 
@@ -408,7 +432,7 @@ def list_must_gather_contents(must_gather_path: str) -> str:
     Returns:
         JSON string with must_gather_root, namespaces, cluster_scoped_resources,
         has_ceph_data, ceph_commands, ceph_log_nodes, pod_counts,
-        top_level_dirs, host_service_logs, and total_files
+        top_level_dirs, host_service_logs, has_noobaa, noobaa, and total_files
     """
     root = _find_must_gather_root(must_gather_path)
 
@@ -450,6 +474,24 @@ def list_must_gather_contents(must_gather_path: str) -> str:
 
     host_logs_dir = root / "host_service_logs"
 
+    noobaa_dir = root / "noobaa"
+    has_noobaa = noobaa_dir.is_dir()
+    noobaa_info = {}
+    if has_noobaa:
+        raw_output = noobaa_dir / "raw_output"
+        noobaa_info["has_status"] = (raw_output / "status").is_file() if raw_output.is_dir() else False
+        noobaa_info["has_db_list"] = (raw_output / "db_list.txt").is_file() if raw_output.is_dir() else False
+        diag_tarballs = list(raw_output.glob("noobaa_diagnostics_*.tar.gz")) if raw_output.is_dir() else []
+        noobaa_info["has_diagnostics"] = len(diag_tarballs) > 0
+        noobaa_logs = noobaa_dir / "logs" / "openshift-storage"
+        noobaa_info["log_files"] = sorted(
+            f.name for f in noobaa_logs.iterdir() if f.is_file()
+        ) if noobaa_logs.is_dir() else []
+        cnpg_dir = noobaa_dir / "cnpg_info"
+        noobaa_info["cnpg_files"] = sorted(
+            f.name for f in cnpg_dir.iterdir() if f.is_file()
+        ) if cnpg_dir.is_dir() else []
+
     return json.dumps({
         "must_gather_root": str(root),
         "namespaces": namespaces,
@@ -460,6 +502,8 @@ def list_must_gather_contents(must_gather_path: str) -> str:
         "pod_counts": pod_counts,
         "top_level_dirs": top_level_dirs,
         "host_service_logs": host_logs_dir.is_dir(),
+        "has_noobaa": has_noobaa,
+        "noobaa": noobaa_info if has_noobaa else {},
         "total_files": _count_files(root),
     })
 
@@ -509,12 +553,18 @@ def _tail_yaml_list(content: str, count: int) -> tuple[str, int]:
 _RESOURCE_ALIASES = {
     "pv": "persistentvolume",
     "sc": "storageclass",
+    "obc": "objectbucketclaim",
+    "ob": "objectbucket",
+    "bs": "backingstore",
+    "ns_store": "namespacestore",
+    "bc": "bucketclass",
 }
 
 _CLUSTER_SCOPED = {
     "node": "cluster-scoped-resources/core/nodes",
     "persistentvolume": "cluster-scoped-resources/core/persistentvolumes",
     "storageclass": "cluster-scoped-resources/storage.k8s.io/storageclasses",
+    "objectbucket": "cluster-scoped-resources/objectbucket.io/objectbuckets",
 }
 
 _NAMESPACED = {
@@ -523,6 +573,11 @@ _NAMESPACED = {
     "configmap": ("core", "configmaps"),
     "secret": ("core", "secrets"),
     "deployment": ("apps", "deployments.apps"),
+    "objectbucketclaim": ("objectbucket.io", "objectbucketclaims"),
+    "backingstore": ("noobaa.io", "backingstores"),
+    "namespacestore": ("noobaa.io", "namespacestores"),
+    "bucketclass": ("noobaa.io", "bucketclasses"),
+    "noobaa": ("noobaa.io", "noobaas"),
 }
 
 _CEPH_COMMANDS = {
@@ -539,6 +594,7 @@ _ALL_SUPPORTED_TYPES = sorted(
     + list(_NAMESPACED.keys())
     + list(_CEPH_COMMANDS.keys())
     + list(_RESOURCE_ALIASES.keys())
+    + ["ceph"]
 )
 
 
@@ -558,9 +614,12 @@ def get_must_gather_resource(
 
     Args:
         must_gather_path: Path to the extracted must-gather directory
-        resource_type: Type of resource (node, pv, sc, events, pod,
-            configmap, secret, deployment, cephhealth, cephstatus,
-            osdtree, osddump)
+        resource_type: Type of resource. Cluster-scoped: node, pv, sc,
+            objectbucket/ob. Namespaced: events, pod, configmap, secret,
+            deployment, objectbucketclaim/obc, backingstore/bs,
+            namespacestore/ns_store, bucketclass/bc, noobaa.
+            Ceph: ceph (generic, specify name), cephhealth, cephstatus,
+            osdtree, osddump
         name: Name of the specific resource (optional — omit to list available names)
         namespace: Namespace for namespaced resources (required for events, pod, etc.)
         tail: For events, return only the last N events (0 = all, default 0)
@@ -571,6 +630,38 @@ def get_must_gather_resource(
     root = _find_must_gather_root(must_gather_path)
     rt = resource_type.lower()
     rt = _RESOURCE_ALIASES.get(rt, rt)
+
+    if rt == "ceph":
+        ceph_cmds_dir = root / "ceph" / "must_gather_commands"
+        if not ceph_cmds_dir.is_dir():
+            return json.dumps({"error": "No ceph/must_gather_commands directory found"})
+        available = sorted(f.name for f in ceph_cmds_dir.iterdir() if f.is_file())
+        if not name:
+            return json.dumps({
+                "resource_type": "ceph",
+                "available_commands": available,
+                "hint": "Specify name parameter to read a specific ceph command output",
+            })
+        target = ceph_cmds_dir / name
+        if not target.is_file():
+            similar = [f for f in available if name in f]
+            return json.dumps({
+                "error": f"Ceph command output not found: '{name}'",
+                "similar": similar,
+                "available_commands": available,
+            })
+        content = target.read_text(encoding="utf-8", errors="replace")
+        result = {
+            "resource_type": "ceph",
+            "name": name,
+            "path": str(target),
+            "content": content,
+        }
+        if len(content.encode("utf-8")) > _MAX_RESOURCE_SIZE:
+            result["content"] = content[:_MAX_RESOURCE_SIZE]
+            result["truncated"] = True
+            result["total_size_bytes"] = target.stat().st_size
+        return json.dumps(result)
 
     if rt in _CEPH_COMMANDS:
         exact_name = _CEPH_COMMANDS[rt]
@@ -702,6 +793,282 @@ def get_must_gather_resource(
     })
 
 
+_NOOBAA_NAMESPACED = {
+    "objectbucketclaim": ("objectbucket.io", "objectbucketclaims"),
+    "backingstore": ("noobaa.io", "backingstores"),
+    "namespacestore": ("noobaa.io", "namespacestores"),
+    "bucketclass": ("noobaa.io", "bucketclasses"),
+    "noobaa": ("noobaa.io", "noobaas"),
+}
+
+_NOOBAA_CLUSTER_SCOPED = {
+    "objectbucket": "cluster-scoped-resources/objectbucket.io/objectbuckets",
+}
+
+_NOOBAA_RESOURCE_ALIASES = {
+    "obc": "objectbucketclaim",
+    "ob": "objectbucket",
+    "bs": "backingstore",
+    "ns_store": "namespacestore",
+    "bc": "bucketclass",
+}
+
+_ALL_NOOBAA_TYPES = sorted(
+    ["status", "db_list", "diagnostics", "logs", "cnpg"]
+    + list(_NOOBAA_NAMESPACED.keys())
+    + list(_NOOBAA_CLUSTER_SCOPED.keys())
+    + list(_NOOBAA_RESOURCE_ALIASES.keys())
+)
+
+
+@mcp.tool
+def get_noobaa_resource(
+    must_gather_path: str,
+    resource_type: str,
+    name: str = "",
+    namespace: str = "",
+    tail: int = 0,
+) -> str:
+    """Retrieve a resource from the NooBaa subtree of a must-gather extraction.
+
+    Accesses NooBaa-specific data that lives under the noobaa/ directory,
+    including CLI status output, diagnostics tarballs, NooBaa-specific logs,
+    CNPG database info, and NooBaa CRD resources.
+
+    Args:
+        must_gather_path: Path to the extracted must-gather directory
+        resource_type: Type of NooBaa resource. Options:
+            status — NooBaa CLI status output
+            db_list — NooBaa database table listing
+            diagnostics — extracted diagnostics tarball (name="" to list, name="<file>" to read)
+            logs — NooBaa log files (name="" to list, name="<file>" to read)
+            cnpg — CNPG database info files (name="" to list, name="<file>" to read)
+            objectbucketclaim/obc, objectbucket/ob, backingstore/bs,
+            namespacestore/ns_store, bucketclass/bc, noobaa — NooBaa CRD YAMLs
+        name: Specific resource or file name (optional — omit to list available)
+        namespace: Namespace for namespaced CRD resources
+        tail: For logs, return only the last N lines (0 = all)
+
+    Returns:
+        JSON string with resource content or available items listing
+    """
+    root = _find_must_gather_root(must_gather_path)
+    try:
+        noobaa_dir = _find_noobaa_dir(root)
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+
+    rt = resource_type.lower()
+    rt = _NOOBAA_RESOURCE_ALIASES.get(rt, rt)
+
+    if rt == "status":
+        status_file = noobaa_dir / "raw_output" / "status"
+        if not status_file.is_file():
+            return json.dumps({"error": "No noobaa/raw_output/status file found"})
+        content = status_file.read_text(encoding="utf-8", errors="replace")
+        result = {"resource_type": "status", "path": str(status_file), "content": content}
+        if len(content.encode("utf-8")) > _MAX_RESOURCE_SIZE:
+            result["content"] = content[:_MAX_RESOURCE_SIZE]
+            result["truncated"] = True
+            result["total_size_bytes"] = status_file.stat().st_size
+        return json.dumps(result)
+
+    if rt == "db_list":
+        db_file = noobaa_dir / "raw_output" / "db_list.txt"
+        if not db_file.is_file():
+            return json.dumps({"error": "No noobaa/raw_output/db_list.txt file found"})
+        content = db_file.read_text(encoding="utf-8", errors="replace")
+        result = {"resource_type": "db_list", "path": str(db_file), "content": content}
+        if len(content.encode("utf-8")) > _MAX_RESOURCE_SIZE:
+            result["content"] = content[:_MAX_RESOURCE_SIZE]
+            result["truncated"] = True
+            result["total_size_bytes"] = db_file.stat().st_size
+        return json.dumps(result)
+
+    if rt == "diagnostics":
+        extract_dir = _ensure_noobaa_diagnostics_extracted(noobaa_dir)
+        if extract_dir is None:
+            return json.dumps({"error": "No noobaa_diagnostics tarball found in noobaa/raw_output/"})
+        available = sorted(
+            str(f.relative_to(extract_dir))
+            for f in extract_dir.rglob("*") if f.is_file()
+        )
+        if not name:
+            return json.dumps({
+                "resource_type": "diagnostics",
+                "available_files": available,
+                "hint": "Specify name parameter to read a specific file",
+            })
+        target = extract_dir / name
+        if not target.is_file():
+            return json.dumps({
+                "error": f"File not found in diagnostics: '{name}'",
+                "available_files": available,
+            })
+        content = target.read_text(encoding="utf-8", errors="replace")
+        result = {
+            "resource_type": "diagnostics",
+            "name": name,
+            "path": str(target),
+            "content": content,
+        }
+        if len(content.encode("utf-8")) > _MAX_RESOURCE_SIZE:
+            result["content"] = content[:_MAX_RESOURCE_SIZE]
+            result["truncated"] = True
+            result["total_size_bytes"] = target.stat().st_size
+        return json.dumps(result)
+
+    if rt == "logs":
+        logs_dir = noobaa_dir / "logs" / "openshift-storage"
+        if not logs_dir.is_dir():
+            return json.dumps({"error": "No noobaa/logs/openshift-storage/ directory found"})
+        available = sorted(f.name for f in logs_dir.iterdir() if f.is_file())
+        if not name:
+            return json.dumps({
+                "resource_type": "logs",
+                "available_logs": available,
+                "hint": "Specify name parameter to read a specific log file",
+            })
+        target = logs_dir / name
+        if not target.is_file():
+            return json.dumps({
+                "error": f"Log file not found: '{name}'",
+                "available_logs": available,
+            })
+        content = target.read_text(encoding="utf-8", errors="replace")
+        truncated = False
+        if tail > 0:
+            lines = content.splitlines()
+            content = "\n".join(lines[-tail:])
+            if lines[-tail:]:
+                content += "\n"
+        elif len(content.encode("utf-8")) > _MAX_RESOURCE_SIZE:
+            lines = content.splitlines()
+            kept = []
+            size = 0
+            for line in reversed(lines):
+                line_size = len(line.encode("utf-8", errors="replace")) + 1
+                if size + line_size > _MAX_RESOURCE_SIZE:
+                    break
+                kept.append(line)
+                size += line_size
+            kept.reverse()
+            content = "\n".join(kept) + "\n"
+            truncated = True
+        result = {
+            "resource_type": "logs",
+            "name": name,
+            "path": str(target),
+            "lines": len(content.splitlines()),
+            "content": content,
+            "truncated": truncated,
+        }
+        return json.dumps(result)
+
+    if rt == "cnpg":
+        cnpg_dir = noobaa_dir / "cnpg_info"
+        if not cnpg_dir.is_dir():
+            return json.dumps({"error": "No noobaa/cnpg_info/ directory found"})
+        available = sorted(f.name for f in cnpg_dir.iterdir() if f.is_file())
+        if not name:
+            return json.dumps({
+                "resource_type": "cnpg",
+                "available_files": available,
+                "hint": "Specify name parameter to read a specific CNPG info file",
+            })
+        target = cnpg_dir / name
+        if not target.is_file():
+            return json.dumps({
+                "error": f"CNPG info file not found: '{name}'",
+                "available_files": available,
+            })
+        content = target.read_text(encoding="utf-8", errors="replace")
+        result = {
+            "resource_type": "cnpg",
+            "name": name,
+            "path": str(target),
+            "content": content,
+        }
+        if len(content.encode("utf-8")) > _MAX_RESOURCE_SIZE:
+            result["content"] = content[:_MAX_RESOURCE_SIZE]
+            result["truncated"] = True
+            result["total_size_bytes"] = target.stat().st_size
+        return json.dumps(result)
+
+    if rt in _NOOBAA_CLUSTER_SCOPED:
+        resource_dir = noobaa_dir / _NOOBAA_CLUSTER_SCOPED[rt]
+        if not resource_dir.is_dir():
+            return json.dumps({"error": f"No {rt} directory found in noobaa subtree"})
+        if name:
+            resource_file = resource_dir / f"{name}.yaml"
+            if not resource_file.is_file():
+                return json.dumps({"error": f"Resource not found: {rt} '{name}'"})
+            content = resource_file.read_text(encoding="utf-8", errors="replace")
+            content = _strip_managed_fields(content)
+            result = {
+                "resource_type": rt,
+                "name": name,
+                "path": str(resource_file),
+                "content": content,
+            }
+            if len(content.encode("utf-8")) > _MAX_RESOURCE_SIZE:
+                result["content"] = content[:_MAX_RESOURCE_SIZE]
+                result["truncated"] = True
+                result["total_size_bytes"] = resource_file.stat().st_size
+            return json.dumps(result)
+        available = sorted(f.stem for f in resource_dir.iterdir() if f.suffix == ".yaml")
+        return json.dumps({
+            "resource_type": rt,
+            "available_names": available,
+            "hint": f"Specify a name parameter to retrieve a specific {rt}",
+        })
+
+    if rt in _NOOBAA_NAMESPACED:
+        namespaces_dir = noobaa_dir / "namespaces"
+        if not namespace:
+            available_ns = sorted(
+                d.name for d in namespaces_dir.iterdir() if d.is_dir()
+            ) if namespaces_dir.is_dir() else []
+            return json.dumps({
+                "error": f"namespace is required for resource_type '{rt}'",
+                "available_namespaces": available_ns,
+            })
+        api_group, resource_path = _NOOBAA_NAMESPACED[rt]
+        resource_dir = namespaces_dir / namespace / api_group / resource_path
+        if not resource_dir.is_dir():
+            return json.dumps({"error": f"No {rt} directory found in noobaa subtree for namespace '{namespace}'"})
+        if name:
+            resource_file = resource_dir / f"{name}.yaml"
+            if not resource_file.is_file():
+                return json.dumps({"error": f"Resource not found: {rt} '{name}' in namespace '{namespace}'"})
+            content = resource_file.read_text(encoding="utf-8", errors="replace")
+            content = _strip_managed_fields(content)
+            result = {
+                "resource_type": rt,
+                "name": name,
+                "namespace": namespace,
+                "path": str(resource_file),
+                "content": content,
+            }
+            if len(content.encode("utf-8")) > _MAX_RESOURCE_SIZE:
+                result["content"] = content[:_MAX_RESOURCE_SIZE]
+                result["truncated"] = True
+                result["total_size_bytes"] = resource_file.stat().st_size
+            return json.dumps(result)
+        available = sorted(f.stem for f in resource_dir.iterdir() if f.suffix == ".yaml")
+        return json.dumps({
+            "resource_type": rt,
+            "namespace": namespace,
+            "available_names": available,
+            "hint": f"Specify a name parameter to retrieve a specific {rt}",
+        })
+
+    return json.dumps({
+        "error": f"Unknown noobaa resource_type '{resource_type}'",
+        "supported_types": _ALL_NOOBAA_TYPES,
+    })
+
+
 @mcp.tool
 def search_must_gather(
     must_gather_path: str,
@@ -784,6 +1151,61 @@ def search_must_gather(
 
 MAX_LOG_SIZE = 200 * 1024
 
+_TIMESTAMP_RE = re.compile(
+    r"(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})"
+    r"|([A-Z]\d{4}\s+\d{2}:\d{2}:\d{2})"
+    r"|^(\d{2}:\d{2}:\d{2})"
+)
+
+
+def _extract_time_str(line: str) -> str | None:
+    m = _TIMESTAMP_RE.search(line[:50])
+    if not m:
+        return None
+    if m.group(1):
+        return m.group(1).split("T")[-1].split(" ")[-1][:8]
+    if m.group(2):
+        return m.group(2).split()[-1][:8]
+    if m.group(3):
+        return m.group(3)[:8]
+    return None
+
+
+def _normalize_time(t: str) -> str:
+    t = t.strip()
+    if "T" in t or " " in t:
+        t = t.replace("T", " ").split(" ")[-1]
+    t = t[:8]
+    if len(t) == 5:
+        t += ":00"
+    return t
+
+
+def _filter_log_by_time(
+    content: str, time_from: str = "", time_to: str = ""
+) -> tuple[str, int, int]:
+    lines = content.splitlines()
+    total = len(lines)
+    t_from = _normalize_time(time_from) if time_from else None
+    t_to = _normalize_time(time_to) if time_to else None
+    in_range = t_from is None
+    kept = []
+    for line in lines:
+        ts = _extract_time_str(line)
+        if ts is not None:
+            if t_from and t_to:
+                in_range = t_from <= ts <= t_to
+            elif t_from:
+                in_range = ts >= t_from
+            elif t_to:
+                in_range = ts <= t_to
+        if in_range:
+            kept.append(line)
+    result = "\n".join(kept)
+    if kept:
+        result += "\n"
+    return result, total, len(kept)
+
 
 @mcp.tool
 def get_must_gather_pod_logs(
@@ -793,12 +1215,14 @@ def get_must_gather_pod_logs(
     container: str = "",
     previous: bool = False,
     tail: int = 0,
+    time_from: str = "",
+    time_to: str = "",
 ) -> str:
     """Retrieve pod logs from a must-gather extraction.
 
     Navigates the must-gather directory structure to find and return pod logs.
     Can list available pods in a namespace, or retrieve logs for a specific
-    pod with optional container and tail filtering.
+    pod with optional container, tail, and time-range filtering.
 
     Args:
         must_gather_path: Path to the extracted must-gather directory
@@ -807,6 +1231,8 @@ def get_must_gather_pod_logs(
         container: Container name filter (empty = all containers)
         previous: If True, return previous.log instead of current.log
         tail: Number of lines from the end to return (0 = all lines)
+        time_from: Start time filter, e.g. "03:38:00" or "2025-01-15T03:38:00"
+        time_to: End time filter, e.g. "03:41:00" or "2025-01-15T03:41:00"
 
     Returns:
         JSON string with available pods list, or pod log contents
@@ -854,6 +1280,11 @@ def get_must_gather_pod_logs(
             content = log_path.read_text(encoding="utf-8", errors="replace")
             truncated = False
 
+            if time_from or time_to:
+                content, _total, _matched = _filter_log_by_time(
+                    content, time_from, time_to
+                )
+
             if tail > 0:
                 lines = content.splitlines()
                 content = "\n".join(lines[-tail:])
@@ -883,12 +1314,17 @@ def get_must_gather_pod_logs(
                 "truncated": truncated,
             })
 
-    return json.dumps({
+    result = {
         "namespace": namespace,
         "pod_name": pod_name,
         "logs": logs,
         "total_logs_found": len(logs),
-    })
+    }
+    if time_from:
+        result["time_from"] = time_from
+    if time_to:
+        result["time_to"] = time_to
+    return json.dumps(result)
 
 
 def main():
