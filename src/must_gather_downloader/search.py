@@ -1,18 +1,9 @@
 import json
 import re
-import signal
 
 from .navigate import _find_must_gather_root
 
-_REGEX_MATCH_TIMEOUT = 5
-
-
-class _RegexTimeout(Exception):
-    pass
-
-
-def _timeout_handler(signum, frame):
-    raise _RegexTimeout()
+_MAX_LINE_LENGTH = 10_000
 
 
 def search_must_gather(
@@ -51,31 +42,20 @@ def search_must_gather(
             continue
 
         files_searched += 1
-        old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
         try:
-            signal.alarm(_REGEX_MATCH_TIMEOUT)
             with open(filepath, encoding="utf-8", errors="replace") as fh:
                 for line_number, line in enumerate(fh, start=1):
-                    if compiled.search(line):
+                    if compiled.search(line[:_MAX_LINE_LENGTH]):
                         matches.append({
                             "file": str(filepath.relative_to(root)),
                             "line_number": line_number,
-                            "line": line.strip(),
+                            "line": line.strip()[:_MAX_LINE_LENGTH],
                         })
                         if len(matches) >= max_results:
                             truncated = True
                             break
-        except _RegexTimeout:
-            matches.append({
-                "file": str(filepath.relative_to(root)),
-                "line_number": 0,
-                "line": "[SKIPPED: regex timed out on this file]",
-            })
         except OSError:
             continue
-        finally:
-            signal.alarm(0)
-            signal.signal(signal.SIGALRM, old_handler)
         if truncated:
             break
 

@@ -1,5 +1,4 @@
 import json
-import signal
 from unittest.mock import patch
 
 import pytest
@@ -1251,35 +1250,40 @@ class TestPathTraversalGuards:
         assert "escapes" in result["error"]
 
 
-class TestRegexTimeout:
-    def test_regex_timeout_skips_file(self, tmp_path):
+class TestLineLengthCapping:
+    def test_long_lines_capped_for_matching(self, tmp_path):
         root = tmp_path / "mg"
         (root / "namespaces" / "default").mkdir(parents=True)
-        slow_file = root / "namespaces" / "default" / "slow.txt"
-        # Content with trailing "!" prevents match, causing catastrophic backtracking
-        slow_file.write_text("a" * 30 + "!\n")
-        normal_file = root / "namespaces" / "default" / "normal.txt"
-        normal_file.write_text("findme here\n")
+        f = root / "namespaces" / "default" / "long.txt"
+        f.write_text("x" * 20_000 + "needle\n")
 
-        with patch("must_gather_downloader.search._REGEX_MATCH_TIMEOUT", 1):
-            result = json.loads(
-                search_must_gather(str(tmp_path), r"(a+)+b", max_results=50)
+        result = json.loads(search_must_gather(str(tmp_path), "needle"))
+        assert result["total_matches"] == 0
+
+    def test_match_within_cap(self, tmp_path):
+        root = tmp_path / "mg"
+        (root / "namespaces" / "default").mkdir(parents=True)
+        f = root / "namespaces" / "default" / "ok.txt"
+        f.write_text("x" * 100 + "needle\n")
+
+        result = json.loads(search_must_gather(str(tmp_path), "needle"))
+        assert result["total_matches"] == 1
+
+    def test_works_from_non_main_thread(self, tmp_path):
+        """Search must work from non-main threads (MCP handlers run in worker threads)."""
+        root = tmp_path / "mg"
+        (root / "namespaces" / "default").mkdir(parents=True)
+        f = root / "namespaces" / "default" / "data.txt"
+        f.write_text("findme here\n")
+
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                search_must_gather, str(tmp_path), "findme"
             )
+            result = json.loads(future.result(timeout=10))
 
-        skipped = [m for m in result["matches"] if "SKIPPED" in m["line"]]
-        assert len(skipped) >= 1
-        assert "regex timed out" in skipped[0]["line"]
-
-    def test_regex_timeout_restores_signal_handler(self, tmp_path):
-        root = tmp_path / "mg"
-        (root / "namespaces" / "default").mkdir(parents=True)
-        slow_file = root / "namespaces" / "default" / "slow.txt"
-        slow_file.write_text("a" * 30 + "!\n")
-
-        original_handler = signal.getsignal(signal.SIGALRM)
-        with patch("must_gather_downloader.search._REGEX_MATCH_TIMEOUT", 1):
-            search_must_gather(str(tmp_path), r"(a+)+b")
-        assert signal.getsignal(signal.SIGALRM) == original_handler
+        assert result["total_matches"] == 1
 
 
 class TestCountFilesAndSize:
