@@ -222,6 +222,23 @@ def _cache_check(cache_entry: Path) -> dict | None:
     return None
 
 
+def _find_must_gather_root(must_gather_path: str) -> Path:
+    path = Path(must_gather_path)
+    if not path.exists():
+        raise ValueError(f"Path does not exist: {must_gather_path}")
+    if not path.is_dir():
+        raise ValueError(f"Path is not a directory: {must_gather_path}")
+    subdirs = sorted(d for d in path.iterdir() if d.is_dir())
+    if not subdirs:
+        raise ValueError(f"No subdirectories found in: {must_gather_path}")
+    if len(subdirs) == 1:
+        return subdirs[0]
+    preferred = [d for d in subdirs if d.name.startswith("must-gather")]
+    if preferred:
+        return preferred[0]
+    return subdirs[0]
+
+
 @mcp.tool
 def download_must_gather(
     reportportal_url: str, force_redownload: bool = False
@@ -370,6 +387,63 @@ def list_must_gather_cache() -> str:
         })
 
     return json.dumps({"entries": entries, "cache_dir": str(cache_dir)})
+
+
+@mcp.tool
+def list_must_gather_contents(must_gather_path: str) -> str:
+    """List the contents and structure of a downloaded must-gather.
+
+    Scans the must-gather directory and reports what namespaces, resource types,
+    ceph data, and other sections are available. Use this to get a quick inventory
+    before drilling into specific resources.
+
+    Args:
+        must_gather_path: The extracted/ directory path from download_must_gather
+
+    Returns:
+        JSON string with must_gather_root, namespaces, cluster_scoped_resources,
+        has_ceph_data, ceph_data_paths, top_level_dirs, host_service_logs,
+        and total_files
+    """
+    root = _find_must_gather_root(must_gather_path)
+
+    namespaces_dir = root / "namespaces"
+    namespaces = sorted(
+        d.name for d in namespaces_dir.iterdir() if d.is_dir()
+    ) if namespaces_dir.is_dir() else []
+
+    cluster_scoped = {}
+    csr_dir = root / "cluster-scoped-resources"
+    if csr_dir.is_dir():
+        for api_group in sorted(csr_dir.iterdir()):
+            if api_group.is_dir():
+                resource_types = sorted(
+                    d.name for d in api_group.iterdir() if d.is_dir()
+                )
+                if resource_types:
+                    cluster_scoped[api_group.name] = resource_types
+
+    ceph_paths = []
+    for d in sorted(root.iterdir()):
+        if d.is_dir() and "ceph" in d.name.lower():
+            for f in sorted(d.rglob("*")):
+                if f.is_file():
+                    ceph_paths.append(str(f.relative_to(root)))
+
+    top_level_dirs = sorted(d.name for d in root.iterdir() if d.is_dir())
+
+    host_logs_dir = root / "host_service_logs"
+
+    return json.dumps({
+        "must_gather_root": str(root),
+        "namespaces": namespaces,
+        "cluster_scoped_resources": cluster_scoped,
+        "has_ceph_data": len(ceph_paths) > 0,
+        "ceph_data_paths": ceph_paths,
+        "top_level_dirs": top_level_dirs,
+        "host_service_logs": host_logs_dir.is_dir(),
+        "total_files": _count_files(root),
+    })
 
 
 def main():
