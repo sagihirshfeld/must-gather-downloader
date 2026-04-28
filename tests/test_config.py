@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import pytest
@@ -56,3 +57,9 @@ class TestSslVerify:
     def test_ca_bundle_path(self, monkeypatch):
         monkeypatch.setenv("RP_SSL_VERIFY", "/etc/pki/tls/certs/ca-bundle.crt")
         assert _ssl_verify() == "/etc/pki/tls/certs/ca-bundle.crt"
+
+    def test_ssl_false_logs_warning(self, monkeypatch, caplog):
+        monkeypatch.setenv("RP_SSL_VERIFY", "false")
+        with caplog.at_level(logging.WARNING, logger="must_gather_downloader.config"):
+            _ssl_verify()
+        assert "SSL verification is disabled" in caplog.text

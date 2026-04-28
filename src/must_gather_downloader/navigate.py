@@ -1,13 +1,22 @@
 import tarfile
+from functools import lru_cache
 from pathlib import Path
 
 
+@lru_cache(maxsize=32)
 def _find_must_gather_root(must_gather_path: str) -> Path:
     path = Path(must_gather_path)
     if not path.exists():
         raise ValueError(f"Path does not exist: {must_gather_path}")
     if not path.is_dir():
         raise ValueError(f"Path is not a directory: {must_gather_path}")
+
+    if (path / "namespaces").is_dir():
+        return path
+
+    for child in sorted(path.iterdir()):
+        if child.is_dir() and (child / "namespaces").is_dir():
+            return child
 
     for candidate in sorted(path.rglob("namespaces"), key=lambda p: len(p.parts)):
         if candidate.is_dir():
@@ -50,3 +59,13 @@ def _ensure_noobaa_diagnostics_extracted(noobaa_dir: Path) -> Path | None:
 
 def _count_files(directory: Path) -> int:
     return sum(1 for _ in directory.rglob("*") if _.is_file())
+
+
+def _count_files_and_size(directory: Path) -> tuple[int, int]:
+    count = 0
+    total_size = 0
+    for f in directory.rglob("*"):
+        if f.is_file():
+            count += 1
+            total_size += f.stat().st_size
+    return count, total_size

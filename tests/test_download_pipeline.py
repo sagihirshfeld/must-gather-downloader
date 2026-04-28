@@ -1,7 +1,6 @@
 import fcntl
 import json
-from pathlib import Path
-from unittest.mock import call, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -30,7 +29,7 @@ def pipeline_mocks(tmp_path, sample_info_dict):
         ),
         "download": patch(f"{MODULE}._download_tarball"),
         "extract": patch(f"{MODULE}._extract_tarball"),
-        "count": patch(f"{MODULE}._count_files", return_value=42),
+        "count": patch(f"{MODULE}._count_files_and_size", return_value=(42, 1024)),
         "flock": patch(f"{MODULE}.fcntl.flock"),
     }
 
@@ -89,9 +88,6 @@ class TestDownloadCacheHit:
 class TestDownloadFullPipeline:
     def test_full_download(self, pipeline_mocks, sample_info_dict):
         mocks, cache_dir = pipeline_mocks
-        dir_size_patch = patch(
-            f"builtins.sum",
-        )
 
         result = json.loads(
             download_must_gather("https://rp.example.com/launches/all/12345/item/67890/log")

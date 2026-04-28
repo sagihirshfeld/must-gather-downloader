@@ -292,6 +292,27 @@ def must_gather_tree(tmp_path):
         "metadata:\n  name: obc-ns-my-obc\n"
     )
 
+    noobaa_nsstore_dir = noobaa_ns / "noobaa.io" / "namespacestores"
+    noobaa_nsstore_dir.mkdir(parents=True)
+    (noobaa_nsstore_dir / "my-ns-store.yaml").write_text(
+        "apiVersion: noobaa.io/v1alpha1\nkind: NamespaceStore\n"
+        "metadata:\n  name: my-ns-store\n"
+    )
+
+    noobaa_bc_dir = noobaa_ns / "noobaa.io" / "bucketclasses"
+    noobaa_bc_dir.mkdir(parents=True)
+    (noobaa_bc_dir / "noobaa-default-bucket-class.yaml").write_text(
+        "apiVersion: noobaa.io/v1alpha1\nkind: BucketClass\n"
+        "metadata:\n  name: noobaa-default-bucket-class\n"
+    )
+
+    noobaa_cr_dir = noobaa_ns / "noobaa.io" / "noobaas"
+    noobaa_cr_dir.mkdir(parents=True)
+    (noobaa_cr_dir / "noobaa.yaml").write_text(
+        "apiVersion: noobaa.io/v1alpha1\nkind: NooBaa\n"
+        "metadata:\n  name: noobaa\n"
+    )
+
     return {"extracted": tmp_path / "extracted", "root": root}
 
 

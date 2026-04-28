@@ -1,5 +1,8 @@
+import logging
 import os
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 RP_PROJECT = "ocs"
 
@@ -7,6 +10,7 @@ RP_PROJECT = "ocs"
 def _ssl_verify() -> bool | str:
     val = os.environ.get("RP_SSL_VERIFY", "true").strip().lower()
     if val == "false":
+        logger.warning("SSL verification is disabled (RP_SSL_VERIFY=false). Connections are vulnerable to MITM attacks.")
         return False
     if val == "true":
         return True

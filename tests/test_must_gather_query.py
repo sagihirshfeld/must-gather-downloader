@@ -1,8 +1,10 @@
 import json
+import signal
+from unittest.mock import patch
 
 import pytest
 
-from must_gather_downloader.navigate import _find_must_gather_root
+from must_gather_downloader.navigate import _count_files_and_size, _find_must_gather_root
 from must_gather_downloader.noobaa import get_noobaa_resource
 from must_gather_downloader.pod_logs import get_must_gather_pod_logs
 from must_gather_downloader.resources import get_must_gather_resource, list_must_gather_contents
@@ -747,6 +749,37 @@ class TestGetNoobaaResource:
         assert "error" in result
         assert "noobaa" in result["error"].lower()
 
+    def test_noobaa_namespacestore(self, must_gather_tree):
+        result = json.loads(
+            get_noobaa_resource(
+                str(must_gather_tree["extracted"]), "ns_store",
+                name="my-ns-store", namespace="openshift-storage",
+            )
+        )
+        assert result["resource_type"] == "namespacestore"
+        assert "NamespaceStore" in result["content"]
+
+    def test_noobaa_bucketclass(self, must_gather_tree):
+        result = json.loads(
+            get_noobaa_resource(
+                str(must_gather_tree["extracted"]), "bc",
+                name="noobaa-default-bucket-class",
+                namespace="openshift-storage",
+            )
+        )
+        assert result["resource_type"] == "bucketclass"
+        assert "BucketClass" in result["content"]
+
+    def test_noobaa_cr(self, must_gather_tree):
+        result = json.loads(
+            get_noobaa_resource(
+                str(must_gather_tree["extracted"]), "noobaa",
+                name="noobaa", namespace="openshift-storage",
+            )
+        )
+        assert result["resource_type"] == "noobaa"
+        assert "NooBaa" in result["content"]
+
     def test_unknown_noobaa_resource_type(self, must_gather_tree):
         result = json.loads(
             get_noobaa_resource(str(must_gather_tree["extracted"]), "nonexistent")
@@ -1153,3 +1186,221 @@ class TestTimeFilteredPodLogs:
         )
         assert "time_from" not in result
         assert "time_to" not in result
+
+
+class TestPathTraversalGuards:
+    def test_ceph_path_traversal(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]), "ceph", name="../../etc/passwd"
+            )
+        )
+        assert "error" in result
+        assert "escapes" in result["error"]
+
+    def test_ceph_path_traversal_dot_segments(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]), "ceph",
+                name="subdir/../../../etc/shadow",
+            )
+        )
+        assert "error" in result
+        assert "escapes" in result["error"]
+
+    def test_noobaa_diagnostics_path_traversal(self, must_gather_tree):
+        # Trigger diagnostics extraction first
+        get_noobaa_resource(str(must_gather_tree["extracted"]), "diagnostics")
+        result = json.loads(
+            get_noobaa_resource(
+                str(must_gather_tree["extracted"]), "diagnostics",
+                name="../../etc/passwd",
+            )
+        )
+        assert "error" in result
+        assert "escapes" in result["error"]
+
+    def test_noobaa_diagnostics_absolute_path(self, must_gather_tree):
+        get_noobaa_resource(str(must_gather_tree["extracted"]), "diagnostics")
+        result = json.loads(
+            get_noobaa_resource(
+                str(must_gather_tree["extracted"]), "diagnostics",
+                name="/etc/passwd",
+            )
+        )
+        assert "error" in result
+
+    def test_noobaa_logs_path_traversal(self, must_gather_tree):
+        result = json.loads(
+            get_noobaa_resource(
+                str(must_gather_tree["extracted"]), "logs",
+                name="../../../etc/passwd",
+            )
+        )
+        assert "error" in result
+        assert "escapes" in result["error"]
+
+    def test_noobaa_cnpg_path_traversal(self, must_gather_tree):
+        result = json.loads(
+            get_noobaa_resource(
+                str(must_gather_tree["extracted"]), "cnpg",
+                name="../../etc/passwd",
+            )
+        )
+        assert "error" in result
+        assert "escapes" in result["error"]
+
+
+class TestRegexTimeout:
+    def test_regex_timeout_skips_file(self, tmp_path):
+        root = tmp_path / "mg"
+        (root / "namespaces" / "default").mkdir(parents=True)
+        slow_file = root / "namespaces" / "default" / "slow.txt"
+        # Content with trailing "!" prevents match, causing catastrophic backtracking
+        slow_file.write_text("a" * 30 + "!\n")
+        normal_file = root / "namespaces" / "default" / "normal.txt"
+        normal_file.write_text("findme here\n")
+
+        with patch("must_gather_downloader.search._REGEX_MATCH_TIMEOUT", 1):
+            result = json.loads(
+                search_must_gather(str(tmp_path), r"(a+)+b", max_results=50)
+            )
+
+        skipped = [m for m in result["matches"] if "SKIPPED" in m["line"]]
+        assert len(skipped) >= 1
+        assert "regex timed out" in skipped[0]["line"]
+
+    def test_regex_timeout_restores_signal_handler(self, tmp_path):
+        root = tmp_path / "mg"
+        (root / "namespaces" / "default").mkdir(parents=True)
+        slow_file = root / "namespaces" / "default" / "slow.txt"
+        slow_file.write_text("a" * 30 + "!\n")
+
+        original_handler = signal.getsignal(signal.SIGALRM)
+        with patch("must_gather_downloader.search._REGEX_MATCH_TIMEOUT", 1):
+            search_must_gather(str(tmp_path), r"(a+)+b")
+        assert signal.getsignal(signal.SIGALRM) == original_handler
+
+
+class TestCountFilesAndSize:
+    def test_counts_files_and_sums_size(self, tmp_path):
+        (tmp_path / "a.txt").write_text("hello")
+        (tmp_path / "b.txt").write_text("world!")
+        (tmp_path / "c.txt").write_text("!")
+        count, size = _count_files_and_size(tmp_path)
+        assert count == 3
+        assert size == 5 + 6 + 1
+
+    def test_empty_directory(self, tmp_path):
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        count, size = _count_files_and_size(empty)
+        assert count == 0
+        assert size == 0
+
+    def test_nested_files(self, tmp_path):
+        sub = tmp_path / "a" / "b" / "c"
+        sub.mkdir(parents=True)
+        (sub / "deep.txt").write_text("data")
+        (tmp_path / "top.txt").write_text("hi")
+        count, size = _count_files_and_size(tmp_path)
+        assert count == 2
+        assert size == 4 + 2
+
+
+class TestFindMustGatherRootCaching:
+    def setup_method(self):
+        _find_must_gather_root.cache_clear()
+
+    def teardown_method(self):
+        _find_must_gather_root.cache_clear()
+
+    def test_lru_cache_returns_same_object(self, tmp_path):
+        root = tmp_path / "mg"
+        (root / "namespaces" / "default").mkdir(parents=True)
+        result1 = _find_must_gather_root(str(tmp_path))
+        result2 = _find_must_gather_root(str(tmp_path))
+        assert result1 is result2
+
+    def test_lru_cache_different_paths(self, tmp_path):
+        path_a = tmp_path / "a"
+        (path_a / "namespaces" / "ns1").mkdir(parents=True)
+        path_b = tmp_path / "b"
+        (path_b / "namespaces" / "ns2").mkdir(parents=True)
+        result_a = _find_must_gather_root(str(path_a))
+        result_b = _find_must_gather_root(str(path_b))
+        assert result_a == path_a
+        assert result_b == path_b
+        assert result_a != result_b
+
+    def test_direct_namespaces_path(self, tmp_path):
+        (tmp_path / "namespaces" / "default").mkdir(parents=True)
+        result = _find_must_gather_root(str(tmp_path))
+        assert result == tmp_path
+
+    def test_one_level_deep_fast_path(self, tmp_path):
+        child = tmp_path / "must-gather-root"
+        (child / "namespaces" / "default").mkdir(parents=True)
+        result = _find_must_gather_root(str(tmp_path))
+        assert result == child
+
+
+class TestEdgeCases:
+    def test_noobaa_logs_large_file_auto_truncation(self, must_gather_tree):
+        log_file = must_gather_tree["root"] / "noobaa" / "logs" / "openshift-storage" / "noobaa_endpoint.log"
+        log_file.write_text("\n".join(f"line {i} " + "x" * 200 for i in range(2000)) + "\n")
+        result = json.loads(
+            get_noobaa_resource(
+                str(must_gather_tree["extracted"]), "logs",
+                name="noobaa_endpoint.log",
+            )
+        )
+        assert result["truncated"] is True
+
+    def test_events_large_file_with_tail_hint(self, must_gather_tree):
+        events_file = (
+            must_gather_tree["root"] / "namespaces" / "openshift-storage" / "core" / "events.yaml"
+        )
+        events_file.write_text(
+            "apiVersion: v1\nkind: EventList\nitems:\n"
+            + "".join(f"- reason: Event{i}\n  message: {'x' * 500}\n" for i in range(500))
+        )
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]), "events",
+                namespace="openshift-storage",
+            )
+        )
+        assert result["truncated"] is True
+        assert "hint" in result
+        assert "tail" in result["hint"]
+
+    def test_configmap_list(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]), "configmap",
+                namespace="openshift-storage",
+            )
+        )
+        assert "rook-ceph-mon-endpoints" in result["available_names"]
+
+    def test_secret_resource(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]), "secret",
+                name="rook-ceph-admin",
+                namespace="openshift-storage",
+            )
+        )
+        assert result["resource_type"] == "secret"
+        assert "Secret" in result["content"]
+
+    def test_namespaced_resource_dir_missing(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]), "deployment",
+                namespace="default",
+            )
+        )
+        assert "error" in result
+        assert "default" in result["error"]

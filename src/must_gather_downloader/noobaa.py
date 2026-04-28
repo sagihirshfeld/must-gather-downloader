@@ -69,7 +69,9 @@ def get_noobaa_resource(
                 "available_files": available,
                 "hint": "Specify name parameter to read a specific file",
             })
-        target = extract_dir / name
+        target = (extract_dir / name).resolve()
+        if not target.is_relative_to(extract_dir.resolve()):
+            return json.dumps({"error": "Invalid path: escapes diagnostics directory"})
         if not target.is_file():
             return json.dumps({
                 "error": f"File not found in diagnostics: '{name}'",
@@ -99,7 +101,9 @@ def get_noobaa_resource(
                 "available_logs": available,
                 "hint": "Specify name parameter to read a specific log file",
             })
-        target = logs_dir / name
+        target = (logs_dir / name).resolve()
+        if not target.is_relative_to(logs_dir.resolve()):
+            return json.dumps({"error": "Invalid path: escapes logs directory"})
         if not target.is_file():
             return json.dumps({
                 "error": f"Log file not found: '{name}'",
@@ -146,7 +150,9 @@ def get_noobaa_resource(
                 "available_files": available,
                 "hint": "Specify name parameter to read a specific CNPG info file",
             })
-        target = cnpg_dir / name
+        target = (cnpg_dir / name).resolve()
+        if not target.is_relative_to(cnpg_dir.resolve()):
+            return json.dumps({"error": "Invalid path: escapes cnpg directory"})
         if not target.is_file():
             return json.dumps({
                 "error": f"CNPG info file not found: '{name}'",

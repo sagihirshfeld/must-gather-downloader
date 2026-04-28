@@ -109,7 +109,9 @@ def get_must_gather_resource(
                 "available_commands": available,
                 "hint": "Specify name parameter to read a specific ceph command output",
             })
-        target = ceph_cmds_dir / name
+        target = (ceph_cmds_dir / name).resolve()
+        if not target.is_relative_to(ceph_cmds_dir.resolve()):
+            return json.dumps({"error": "Invalid path: escapes ceph commands directory"})
         if not target.is_file():
             similar = [f for f in available if name in f]
             return json.dumps({
@@ -132,13 +134,9 @@ def get_must_gather_resource(
 
     if rt in _CEPH_COMMANDS:
         exact_name = _CEPH_COMMANDS[rt]
-        matches = [
-            f for f in root.rglob(exact_name)
-            if f.is_file() and f.name == exact_name
-        ]
-        if not matches:
+        target = root / "ceph" / "must_gather_commands" / exact_name
+        if not target.is_file():
             return json.dumps({"error": f"No {rt} data found in must-gather"})
-        target = matches[0]
         content = target.read_text(encoding="utf-8", errors="replace")
         result = {
             "resource_type": rt,

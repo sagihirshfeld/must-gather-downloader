@@ -11,7 +11,7 @@ import requests
 
 from .cache import _cache_check
 from .config import RP_PROJECT, _get_config, _ssl_verify
-from .navigate import _count_files
+from .navigate import _count_files_and_size
 from .reportportal import (
     _extract_hrefs,
     _extract_ids,
@@ -28,8 +28,11 @@ def _resolve_test_log_directory(
     launch_api = f"{rp_api}/launch?filter.eq.id={launch_id}"
     item_api = f"{rp_api}/item/{test_item_id}"
 
-    launch_json = _fetch_json(launch_api, api_key)
-    item_json = _fetch_json(item_api, api_key)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        launch_future = pool.submit(_fetch_json, launch_api, api_key)
+        item_future = pool.submit(_fetch_json, item_api, api_key)
+        launch_json = launch_future.result()
+        item_json = item_future.result()
 
     try:
         description = launch_json["content"][0]["description"]
@@ -153,59 +156,57 @@ def download_must_gather(
             })
 
     lock_path = cache_entry / ".lock"
-    lock_fd = open(lock_path, "w")
-    try:
+    with open(lock_path, "w") as lock_fd:
         fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        try:
+            if not force_redownload:
+                metadata = _cache_check(cache_entry)
+                if metadata:
+                    extracted = cache_entry / "extracted"
+                    return json.dumps({
+                        "path": str(extracted),
+                        "test_name": metadata["test_name"],
+                        "cluster_name": metadata["cluster_name"],
+                        "tarball_url": metadata["tarball_url"],
+                        "cached": True,
+                        "files_count": metadata.get("files_count") or _count_files(extracted),
+                    })
 
-        if not force_redownload:
-            metadata = _cache_check(cache_entry)
-            if metadata:
-                extracted = cache_entry / "extracted"
-                return json.dumps({
-                    "path": str(extracted),
-                    "test_name": metadata["test_name"],
-                    "cluster_name": metadata["cluster_name"],
-                    "tarball_url": metadata["tarball_url"],
-                    "cached": True,
-                    "files_count": metadata.get("files_count") or _count_files(extracted),
-                })
+            extracted_dir = cache_entry / "extracted"
+            if force_redownload and extracted_dir.exists():
+                shutil.rmtree(extracted_dir)
 
-        extracted_dir = cache_entry / "extracted"
-        if force_redownload and extracted_dir.exists():
-            shutil.rmtree(extracted_dir)
+            info = _resolve_test_log_directory(launch_id, test_item_id, api_key, base_url)
+            tarball_url = _find_tarball_url(info, api_key)
 
-        info = _resolve_test_log_directory(launch_id, test_item_id, api_key, base_url)
-        tarball_url = _find_tarball_url(info, api_key)
+            tarball_filename = Path(unquote(tarball_url.rsplit("/", 1)[-1])).name
+            tarball_path = cache_entry / tarball_filename
+            _download_tarball(tarball_url, tarball_path, api_key)
+            _extract_tarball(tarball_path, extracted_dir)
+            tarball_path.unlink(missing_ok=True)
 
-        tarball_filename = Path(unquote(tarball_url.rsplit("/", 1)[-1])).name
-        tarball_path = cache_entry / tarball_filename
-        _download_tarball(tarball_url, tarball_path, api_key)
-        _extract_tarball(tarball_path, extracted_dir)
+            files_count, size_bytes = _count_files_and_size(extracted_dir)
 
-        files_count = _count_files(extracted_dir)
-        size_bytes = sum(f.stat().st_size for f in extracted_dir.rglob("*") if f.is_file())
+            metadata = {
+                "test_name": info["test_name"],
+                "cluster_name": info["cluster_name"],
+                "tarball_url": tarball_url,
+                "launch_id": info["launch_id"],
+                "test_item_id": info["test_item_id"],
+                "downloaded_at": datetime.now(timezone.utc).isoformat(),
+                "files_count": files_count,
+                "size_bytes": size_bytes,
+            }
+            with open(cache_entry / "metadata.json", "w") as f:
+                json.dump(metadata, f, indent=2)
 
-        metadata = {
-            "test_name": info["test_name"],
-            "cluster_name": info["cluster_name"],
-            "tarball_url": tarball_url,
-            "launch_id": info["launch_id"],
-            "test_item_id": info["test_item_id"],
-            "downloaded_at": datetime.now(timezone.utc).isoformat(),
-            "files_count": files_count,
-            "size_bytes": size_bytes,
-        }
-        with open(cache_entry / "metadata.json", "w") as f:
-            json.dump(metadata, f, indent=2)
-
-        return json.dumps({
-            "path": str(extracted_dir),
-            "test_name": info["test_name"],
-            "cluster_name": info["cluster_name"],
-            "tarball_url": tarball_url,
-            "cached": False,
-            "files_count": files_count,
-        })
-    finally:
-        fcntl.flock(lock_fd, fcntl.LOCK_UN)
-        lock_fd.close()
+            return json.dumps({
+                "path": str(extracted_dir),
+                "test_name": info["test_name"],
+                "cluster_name": info["cluster_name"],
+                "tarball_url": tarball_url,
+                "cached": False,
+                "files_count": files_count,
+            })
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
