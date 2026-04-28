@@ -446,6 +446,180 @@ def list_must_gather_contents(must_gather_path: str) -> str:
     })
 
 
+
+_RESOURCE_ALIASES = {
+    "pv": "persistentvolume",
+    "sc": "storageclass",
+}
+
+_CLUSTER_SCOPED = {
+    "node": "cluster-scoped-resources/core/nodes",
+    "persistentvolume": "cluster-scoped-resources/core/persistentvolumes",
+    "storageclass": "cluster-scoped-resources/storage.k8s.io/storageclasses",
+}
+
+_NAMESPACED = {
+    "events": ("core", "events.yaml"),
+    "pod": ("core", "pods"),
+    "configmap": ("core", "configmaps"),
+    "secret": ("core", "secrets"),
+    "deployment": ("apps", "deployments.apps"),
+}
+
+_CEPH_PATTERNS = {
+    "cephhealth": "*ceph*health*",
+    "cephstatus": "*ceph*status*",
+}
+
+_MAX_RESOURCE_SIZE = 100 * 1024
+
+_ALL_SUPPORTED_TYPES = sorted(
+    list(_CLUSTER_SCOPED.keys())
+    + list(_NAMESPACED.keys())
+    + list(_CEPH_PATTERNS.keys())
+    + list(_RESOURCE_ALIASES.keys())
+)
+
+
+@mcp.tool
+def get_must_gather_resource(
+    must_gather_path: str,
+    resource_type: str,
+    name: str = "",
+    namespace: str = "",
+) -> str:
+    """Retrieve a specific resource from a must-gather extraction.
+
+    Maps logical resource names to their file paths within the must-gather
+    directory structure and returns their content.
+
+    Args:
+        must_gather_path: Path to the extracted must-gather directory
+        resource_type: Type of resource (node, pv, sc, events, pod,
+            configmap, secret, deployment, cephhealth, cephstatus)
+        name: Name of the specific resource (optional — omit to list available names)
+        namespace: Namespace for namespaced resources (required for events, pod, etc.)
+
+    Returns:
+        JSON string with resource content or available names listing
+    """
+    root = _find_must_gather_root(must_gather_path)
+    rt = resource_type.lower()
+    rt = _RESOURCE_ALIASES.get(rt, rt)
+
+    if rt in _CEPH_PATTERNS:
+        pattern = _CEPH_PATTERNS[rt]
+        matches = list(root.rglob(pattern))
+        if not matches:
+            return json.dumps({"error": f"No {rt} data found in must-gather"})
+        target = matches[0]
+        content = target.read_text(encoding="utf-8", errors="replace")
+        result = {
+            "resource_type": rt,
+            "path": str(target),
+            "content": content,
+        }
+        if len(content.encode("utf-8")) > _MAX_RESOURCE_SIZE:
+            result["content"] = content[:_MAX_RESOURCE_SIZE]
+            result["truncated"] = True
+            result["total_size_bytes"] = target.stat().st_size
+        return json.dumps(result)
+
+    if rt in _CLUSTER_SCOPED:
+        resource_dir = root / _CLUSTER_SCOPED[rt]
+        if not resource_dir.is_dir():
+            return json.dumps({"error": f"No {rt} directory found in must-gather"})
+        if name:
+            resource_file = resource_dir / f"{name}.yaml"
+            if not resource_file.is_file():
+                return json.dumps({"error": f"Resource not found: {rt} '{name}'"})
+            content = resource_file.read_text(encoding="utf-8", errors="replace")
+            result = {
+                "resource_type": rt,
+                "name": name,
+                "path": str(resource_file),
+                "content": content,
+            }
+            if len(content.encode("utf-8")) > _MAX_RESOURCE_SIZE:
+                result["content"] = content[:_MAX_RESOURCE_SIZE]
+                result["truncated"] = True
+                result["total_size_bytes"] = resource_file.stat().st_size
+            return json.dumps(result)
+        available = sorted(
+            f.stem for f in resource_dir.iterdir() if f.suffix == ".yaml"
+        )
+        return json.dumps({
+            "resource_type": rt,
+            "available_names": available,
+            "hint": f"Specify a name parameter to retrieve a specific {rt}",
+        })
+
+    if rt in _NAMESPACED:
+        namespaces_dir = root / "namespaces"
+        if not namespace:
+            available_ns = sorted(
+                d.name for d in namespaces_dir.iterdir() if d.is_dir()
+            ) if namespaces_dir.is_dir() else []
+            return json.dumps({
+                "error": f"namespace is required for resource_type '{rt}'",
+                "available_namespaces": available_ns,
+            })
+
+        api_group, resource_path = _NAMESPACED[rt]
+
+        if rt == "events":
+            events_file = namespaces_dir / namespace / api_group / resource_path
+            if not events_file.is_file():
+                return json.dumps({"error": f"Resource not found: {rt} in namespace '{namespace}'"})
+            content = events_file.read_text(encoding="utf-8", errors="replace")
+            result = {
+                "resource_type": rt,
+                "namespace": namespace,
+                "path": str(events_file),
+                "content": content,
+            }
+            if len(content.encode("utf-8")) > _MAX_RESOURCE_SIZE:
+                result["content"] = content[:_MAX_RESOURCE_SIZE]
+                result["truncated"] = True
+                result["total_size_bytes"] = events_file.stat().st_size
+            return json.dumps(result)
+
+        resource_dir = namespaces_dir / namespace / api_group / resource_path
+        if not resource_dir.is_dir():
+            return json.dumps({"error": f"No {rt} directory found in namespace '{namespace}'"})
+        if name:
+            resource_file = resource_dir / f"{name}.yaml"
+            if not resource_file.is_file():
+                return json.dumps({"error": f"Resource not found: {rt} '{name}' in namespace '{namespace}'"})
+            content = resource_file.read_text(encoding="utf-8", errors="replace")
+            result = {
+                "resource_type": rt,
+                "name": name,
+                "namespace": namespace,
+                "path": str(resource_file),
+                "content": content,
+            }
+            if len(content.encode("utf-8")) > _MAX_RESOURCE_SIZE:
+                result["content"] = content[:_MAX_RESOURCE_SIZE]
+                result["truncated"] = True
+                result["total_size_bytes"] = resource_file.stat().st_size
+            return json.dumps(result)
+        available = sorted(
+            f.stem for f in resource_dir.iterdir() if f.suffix == ".yaml"
+        )
+        return json.dumps({
+            "resource_type": rt,
+            "namespace": namespace,
+            "available_names": available,
+            "hint": f"Specify a name parameter to retrieve a specific {rt}",
+        })
+
+    return json.dumps({
+        "error": f"Unknown resource_type '{resource_type}'",
+        "supported_types": _ALL_SUPPORTED_TYPES,
+    })
+
+
 def main():
     mcp.run()
 

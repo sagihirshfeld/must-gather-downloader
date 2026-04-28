@@ -2,7 +2,11 @@ import json
 
 import pytest
 
-from must_gather_downloader.server import _find_must_gather_root, list_must_gather_contents
+from must_gather_downloader.server import (
+    _find_must_gather_root,
+    get_must_gather_resource,
+    list_must_gather_contents,
+)
 
 
 class TestFindMustGatherRoot:
@@ -93,3 +97,135 @@ class TestListMustGatherContents:
     def test_invalid_path(self):
         with pytest.raises(ValueError):
             list_must_gather_contents("/nonexistent/path/xyz")
+
+
+class TestGetMustGatherResource:
+    def test_get_specific_node(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]), "node", name="master-0"
+            )
+        )
+        assert result["resource_type"] == "node"
+        assert result["name"] == "master-0"
+        assert "kind: Node" in result["content"]
+        assert "path" in result
+
+    def test_list_nodes(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(str(must_gather_tree["extracted"]), "node")
+        )
+        assert result["resource_type"] == "node"
+        assert sorted(result["available_names"]) == ["master-0", "worker-0"]
+        assert "hint" in result
+
+    def test_get_pv(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]), "pv", name="pv-001"
+            )
+        )
+        assert result["resource_type"] == "persistentvolume"
+        assert result["name"] == "pv-001"
+        assert "PersistentVolume" in result["content"]
+
+    def test_get_storageclass(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]),
+                "sc",
+                name="ocs-storagecluster-ceph-rbd",
+            )
+        )
+        assert result["resource_type"] == "storageclass"
+        assert "StorageClass" in result["content"]
+
+    def test_get_events(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]),
+                "events",
+                namespace="openshift-storage",
+            )
+        )
+        assert result["resource_type"] == "events"
+        assert "CrashLoopBackOff" in result["content"]
+
+    def test_namespaced_resource_no_namespace(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(str(must_gather_tree["extracted"]), "events")
+        )
+        assert "error" in result
+        assert "namespace is required" in result["error"]
+        assert "openshift-storage" in result["available_namespaces"]
+        assert "default" in result["available_namespaces"]
+
+    def test_resource_not_found(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]), "node", name="nonexistent"
+            )
+        )
+        assert "error" in result
+        assert "nonexistent" in result["error"]
+
+    def test_unknown_resource_type(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(str(must_gather_tree["extracted"]), "foobar")
+        )
+        assert "error" in result
+        assert "Unknown resource_type" in result["error"]
+        assert "supported_types" in result
+        assert "node" in result["supported_types"]
+
+    def test_ceph_health(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(str(must_gather_tree["extracted"]), "cephhealth")
+        )
+        assert result["resource_type"] == "cephhealth"
+        assert "HEALTH_WARN" in result["content"]
+
+    def test_large_file_truncation(self, must_gather_tree):
+        large_node = (
+            must_gather_tree["root"]
+            / "cluster-scoped-resources"
+            / "core"
+            / "nodes"
+            / "large-node.yaml"
+        )
+        large_node.write_text("x" * 200_000)
+
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]), "node", name="large-node"
+            )
+        )
+        assert result["truncated"] is True
+        assert result["total_size_bytes"] == 200_000
+        assert len(result["content"]) <= 100 * 1024
+
+    def test_deployment_resource(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]),
+                "deployment",
+                name="noobaa-operator",
+                namespace="openshift-storage",
+            )
+        )
+        assert result["resource_type"] == "deployment"
+        assert result["name"] == "noobaa-operator"
+        assert "Deployment" in result["content"]
+
+    def test_case_insensitive_resource_type(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]), "Node", name="master-0"
+            )
+        )
+        assert result["resource_type"] == "node"
+        assert "kind: Node" in result["content"]
+
+    def test_invalid_path(self):
+        with pytest.raises(ValueError, match="does not exist"):
+            get_must_gather_resource("/nonexistent/path", "node")

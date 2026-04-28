@@ -72,6 +72,120 @@ def sample_tarball(tmp_path):
 
 
 @pytest.fixture
+def must_gather_tree(tmp_path):
+    root = tmp_path / "extracted" / "must-gather-20250115"
+
+    nodes = root / "cluster-scoped-resources" / "core" / "nodes"
+    nodes.mkdir(parents=True)
+    (nodes / "master-0.yaml").write_text(
+        "apiVersion: v1\nkind: Node\nmetadata:\n  name: master-0\n"
+        "status:\n  conditions:\n    - type: Ready\n      status: 'True'\n"
+    )
+    (nodes / "worker-0.yaml").write_text(
+        "apiVersion: v1\nkind: Node\nmetadata:\n  name: worker-0\n"
+        "status:\n  conditions:\n    - type: Ready\n      status: 'True'\n"
+    )
+
+    pvs = root / "cluster-scoped-resources" / "core" / "persistentvolumes"
+    pvs.mkdir(parents=True)
+    (pvs / "pv-001.yaml").write_text(
+        "apiVersion: v1\nkind: PersistentVolume\nmetadata:\n  name: pv-001\n"
+    )
+
+    scs = root / "cluster-scoped-resources" / "storage.k8s.io" / "storageclasses"
+    scs.mkdir(parents=True)
+    (scs / "ocs-storagecluster-ceph-rbd.yaml").write_text(
+        "apiVersion: storage.k8s.io/v1\nkind: StorageClass\n"
+        "metadata:\n  name: ocs-storagecluster-ceph-rbd\n"
+    )
+
+    os_ns = root / "namespaces" / "openshift-storage"
+    (os_ns / "core").mkdir(parents=True)
+    (os_ns / "core" / "events.yaml").write_text(
+        "apiVersion: v1\nkind: EventList\nitems:\n"
+        "  - reason: CrashLoopBackOff\n    message: back-off restarting\n"
+    )
+
+    pods_dir = os_ns / "core" / "pods"
+
+    mon_pod = pods_dir / "rook-ceph-mon-a-abc123" / "mon" / "mon"
+    mon_pod.mkdir(parents=True)
+    (mon_pod / "current.log").write_text("mon current log\n")
+    (mon_pod / "previous.log").write_text("mon previous log\n")
+
+    osd_pod = pods_dir / "rook-ceph-osd-0-def456" / "osd" / "osd"
+    osd_pod.mkdir(parents=True)
+    (osd_pod / "current.log").write_text("osd current log\n")
+
+    noobaa_pod = pods_dir / "noobaa-core-0"
+    noobaa_core = noobaa_pod / "noobaa-core" / "noobaa-core"
+    noobaa_core.mkdir(parents=True)
+    (noobaa_core / "current.log").write_text("noobaa-core log\n")
+    noobaa_init = noobaa_pod / "init-container" / "init-container"
+    noobaa_init.mkdir(parents=True)
+    (noobaa_init / "current.log").write_text("init-container log\n")
+
+    # Pod YAML files for namespaced pod lookup
+    (pods_dir / "rook-ceph-mon-a-abc123.yaml").write_text(
+        "apiVersion: v1\nkind: Pod\nmetadata:\n  name: rook-ceph-mon-a-abc123\n"
+    )
+
+    deployments = os_ns / "apps" / "deployments.apps"
+    deployments.mkdir(parents=True)
+    (deployments / "noobaa-operator.yaml").write_text(
+        "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: noobaa-operator\n"
+    )
+
+    # configmaps and secrets dirs for namespaced resource tests
+    cms = os_ns / "core" / "configmaps"
+    cms.mkdir(parents=True)
+    (cms / "rook-ceph-mon-endpoints.yaml").write_text(
+        "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: rook-ceph-mon-endpoints\n"
+    )
+
+    secrets = os_ns / "core" / "secrets"
+    secrets.mkdir(parents=True)
+    (secrets / "rook-ceph-admin.yaml").write_text(
+        "apiVersion: v1\nkind: Secret\nmetadata:\n  name: rook-ceph-admin\n"
+    )
+
+    default_ns = root / "namespaces" / "default" / "core"
+    default_ns.mkdir(parents=True)
+    (default_ns / "events.yaml").write_text(
+        "apiVersion: v1\nkind: EventList\nitems: []\n"
+    )
+
+    ceph = root / "ceph"
+    ceph.mkdir(parents=True)
+    (ceph / "ceph_health_detail").write_text("HEALTH_WARN\n")
+    (ceph / "ceph_status").write_text("cluster status OK\n")
+    (ceph / "ceph_osd_dump").write_text("osd dump data\n")
+
+    host_logs = root / "host_service_logs" / "master-0"
+    host_logs.mkdir(parents=True)
+    (host_logs / "kubelet.log").write_text("kubelet log line\n")
+
+    return {"extracted": tmp_path / "extracted", "root": root}
+
+
+@pytest.fixture
+def empty_must_gather(tmp_path):
+    extracted = tmp_path / "extracted"
+    root = extracted / "must-gather-empty"
+    root.mkdir(parents=True)
+    return {"extracted": extracted, "root": root}
+
+
+@pytest.fixture
+def multi_root_must_gather(tmp_path):
+    extracted = tmp_path / "extracted"
+    (extracted / "other-dir").mkdir(parents=True)
+    preferred = extracted / "must-gather-20250115"
+    preferred.mkdir(parents=True)
+    return {"extracted": extracted, "preferred": preferred}
+
+
+@pytest.fixture
 def make_mock_response():
     def _make(status_code=200, json_data=None, text="", headers=None):
         resp = MagicMock()
@@ -88,95 +202,3 @@ def make_mock_response():
         resp.iter_content.return_value = iter([b"fake tarball content"])
         return resp
     return _make
-
-
-@pytest.fixture
-def must_gather_tree(tmp_path):
-    extracted = tmp_path / "extracted"
-    root = extracted / "must-gather-20250115"
-    root.mkdir(parents=True)
-
-    # cluster-scoped-resources
-    nodes = root / "cluster-scoped-resources" / "core" / "nodes"
-    nodes.mkdir(parents=True)
-    (nodes / "master-0.yaml").write_text(
-        "metadata:\n  name: master-0\nstatus:\n  conditions:\n  - type: Ready\n    status: 'True'\n"
-    )
-    (nodes / "worker-0.yaml").write_text(
-        "metadata:\n  name: worker-0\nstatus:\n  conditions:\n  - type: Ready\n    status: 'True'\n"
-    )
-
-    pvs = root / "cluster-scoped-resources" / "core" / "persistentvolumes"
-    pvs.mkdir(parents=True)
-    (pvs / "pv-001.yaml").write_text("metadata:\n  name: pv-001\n")
-
-    scs = root / "cluster-scoped-resources" / "storage.k8s.io" / "storageclasses"
-    scs.mkdir(parents=True)
-    (scs / "ocs-storagecluster-ceph-rbd.yaml").write_text(
-        "metadata:\n  name: ocs-storagecluster-ceph-rbd\n"
-    )
-
-    # namespaces/openshift-storage
-    ns_os = root / "namespaces" / "openshift-storage"
-    (ns_os / "core").mkdir(parents=True)
-    (ns_os / "core" / "events.yaml").write_text(
-        "items:\n- reason: CrashLoopBackOff\n  message: Back-off restarting\n"
-    )
-
-    mon_logs = ns_os / "core" / "pods" / "rook-ceph-mon-a-abc123" / "mon" / "mon"
-    mon_logs.mkdir(parents=True)
-    (mon_logs / "current.log").write_text("mon current log\n")
-    (mon_logs / "previous.log").write_text("mon previous log\n")
-
-    osd_logs = ns_os / "core" / "pods" / "rook-ceph-osd-0-def456" / "osd" / "osd"
-    osd_logs.mkdir(parents=True)
-    (osd_logs / "current.log").write_text("osd current log\n")
-
-    noobaa_core = ns_os / "core" / "pods" / "noobaa-core-0" / "noobaa-core" / "noobaa-core"
-    noobaa_core.mkdir(parents=True)
-    (noobaa_core / "current.log").write_text("noobaa-core log\n")
-
-    noobaa_init = ns_os / "core" / "pods" / "noobaa-core-0" / "init-container" / "init-container"
-    noobaa_init.mkdir(parents=True)
-    (noobaa_init / "current.log").write_text("init container log\n")
-
-    deployments = ns_os / "apps"
-    deployments.mkdir(parents=True)
-    (deployments / "deployments.apps").mkdir()
-    (deployments / "deployments.apps" / "noobaa-operator.yaml").write_text(
-        "metadata:\n  name: noobaa-operator\n"
-    )
-
-    # namespaces/default
-    ns_default = root / "namespaces" / "default" / "core"
-    ns_default.mkdir(parents=True)
-    (ns_default / "events.yaml").write_text("items: []\n")
-
-    # ceph data
-    ceph = root / "ceph"
-    ceph.mkdir()
-    (ceph / "ceph_health_detail").write_text("HEALTH_OK\n")
-    (ceph / "ceph_status").write_text("cluster status ok\n")
-    (ceph / "ceph_osd_dump").write_text("osd dump\n")
-
-    # host_service_logs
-    host_logs = root / "host_service_logs" / "master-0"
-    host_logs.mkdir(parents=True)
-    (host_logs / "kubelet.log").write_text("kubelet log\n")
-
-    return {"extracted": extracted, "root": root}
-
-
-@pytest.fixture
-def empty_must_gather(tmp_path):
-    root = tmp_path / "empty-extracted" / "must-gather-empty"
-    root.mkdir(parents=True)
-    return {"extracted": root.parent, "root": root}
-
-
-@pytest.fixture
-def multi_root_must_gather(tmp_path):
-    extracted = tmp_path / "multi-extracted"
-    (extracted / "other-dir").mkdir(parents=True)
-    (extracted / "must-gather-abc").mkdir(parents=True)
-    return {"extracted": extracted, "preferred": extracted / "must-gather-abc"}
