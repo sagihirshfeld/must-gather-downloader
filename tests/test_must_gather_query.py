@@ -6,6 +6,7 @@ from must_gather_downloader.server import (
     _find_must_gather_root,
     get_must_gather_resource,
     list_must_gather_contents,
+    search_must_gather,
 )
 
 
@@ -229,3 +230,79 @@ class TestGetMustGatherResource:
     def test_invalid_path(self):
         with pytest.raises(ValueError, match="does not exist"):
             get_must_gather_resource("/nonexistent/path", "node")
+
+
+class TestSearchMustGather:
+    def test_search_finds_matches(self, must_gather_tree):
+        result = json.loads(search_must_gather(str(must_gather_tree["extracted"]), "CrashLoopBackOff"))
+        assert result["total_matches"] >= 1
+        assert any("CrashLoopBackOff" in m["line"] for m in result["matches"])
+
+    def test_case_insensitive_default(self, must_gather_tree):
+        result = json.loads(search_must_gather(str(must_gather_tree["extracted"]), "crashloopbackoff"))
+        assert result["total_matches"] >= 1
+
+    def test_case_sensitive(self, must_gather_tree):
+        result = json.loads(search_must_gather(
+            str(must_gather_tree["extracted"]), "crashloopbackoff", case_sensitive=True
+        ))
+        assert result["total_matches"] == 0
+
+    def test_file_pattern_filter(self, must_gather_tree):
+        result = json.loads(search_must_gather(
+            str(must_gather_tree["extracted"]), "log", file_pattern="*.log"
+        ))
+        assert result["total_matches"] >= 1
+        for m in result["matches"]:
+            assert m["file"].endswith(".log")
+
+    def test_max_results_truncation(self, must_gather_tree):
+        result = json.loads(search_must_gather(
+            str(must_gather_tree["extracted"]), "name", max_results=2
+        ))
+        assert result["truncated"] is True
+        assert len(result["matches"]) == 2
+
+    def test_no_matches(self, must_gather_tree):
+        result = json.loads(search_must_gather(
+            str(must_gather_tree["extracted"]), "zzz_nonexistent_string_zzz"
+        ))
+        assert result["total_matches"] == 0
+        assert result["matches"] == []
+        assert result["truncated"] is False
+
+    def test_regex_pattern(self, must_gather_tree):
+        result = json.loads(search_must_gather(str(must_gather_tree["extracted"]), r"kind: \w+"))
+        assert result["total_matches"] >= 2
+
+    def test_invalid_regex_fallback(self, must_gather_tree):
+        result = json.loads(search_must_gather(str(must_gather_tree["extracted"]), "[invalid"))
+        assert "error" not in result
+        assert isinstance(result["matches"], list)
+
+    def test_empty_pattern_error(self, must_gather_tree):
+        result = json.loads(search_must_gather(str(must_gather_tree["extracted"]), ""))
+        assert "error" in result
+
+    def test_binary_file_skipped(self, must_gather_tree):
+        binary_file = must_gather_tree["root"] / "namespaces" / "openshift-storage" / "binary.dat"
+        binary_file.write_bytes(b"\x00\x01\x02FINDME\x03\x04")
+        result = json.loads(search_must_gather(str(must_gather_tree["extracted"]), "FINDME"))
+        assert result["total_matches"] == 0
+
+    def test_files_searched_count(self, must_gather_tree):
+        result = json.loads(search_must_gather(str(must_gather_tree["extracted"]), "anything"))
+        assert result["files_searched"] > 0
+
+    def test_match_structure(self, must_gather_tree):
+        result = json.loads(search_must_gather(str(must_gather_tree["extracted"]), "CrashLoopBackOff"))
+        assert result["total_matches"] >= 1
+        match = result["matches"][0]
+        assert "file" in match
+        assert "line_number" in match
+        assert "line" in match
+
+    def test_relative_paths(self, must_gather_tree):
+        result = json.loads(search_must_gather(str(must_gather_tree["extracted"]), "CrashLoopBackOff"))
+        for m in result["matches"]:
+            assert not m["file"].startswith("/")
