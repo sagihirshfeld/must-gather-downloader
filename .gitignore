@@ -12,3 +12,4 @@ venv/
 CLAUDE.md
 .coverage
 .pytest_cache/
+.claude/
