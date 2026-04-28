@@ -12,12 +12,29 @@ from must_gather_downloader.server import (
 
 
 class TestFindMustGatherRoot:
-    def test_single_root_dir(self, tmp_path):
+    def test_finds_dir_with_namespaces(self, tmp_path):
+        root = tmp_path / "tarball" / "plugin-dir"
+        (root / "namespaces" / "default").mkdir(parents=True)
+        assert _find_must_gather_root(str(tmp_path)) == root
+
+    def test_nested_plugin_directory(self, tmp_path):
+        plugin = tmp_path / "ocs_must_gather" / "ocs-qe-proxy-sha256-abc"
+        (plugin / "namespaces" / "openshift-storage").mkdir(parents=True)
+        (plugin / "cluster-scoped-resources" / "core").mkdir(parents=True)
+        assert _find_must_gather_root(str(tmp_path)) == plugin
+
+    def test_prefers_shallowest_namespaces(self, tmp_path):
+        shallow = tmp_path / "root"
+        (shallow / "namespaces" / "ns1").mkdir(parents=True)
+        (shallow / "ceph" / "namespaces" / "ns2").mkdir(parents=True)
+        assert _find_must_gather_root(str(tmp_path)) == shallow
+
+    def test_fallback_single_subdir(self, tmp_path):
         only_dir = tmp_path / "single-root"
         only_dir.mkdir()
         assert _find_must_gather_root(str(tmp_path)) == only_dir
 
-    def test_prefers_must_gather_prefix(self, multi_root_must_gather):
+    def test_fallback_prefers_must_gather_prefix(self, multi_root_must_gather):
         result = _find_must_gather_root(str(multi_root_must_gather["extracted"]))
         assert result == multi_root_must_gather["preferred"]
 
@@ -42,12 +59,6 @@ class TestFindMustGatherRoot:
         with pytest.raises(ValueError, match="No subdirectories"):
             _find_must_gather_root(str(empty))
 
-    def test_ignores_files_in_root(self, tmp_path):
-        (tmp_path / "readme.txt").write_text("ignore me")
-        only_dir = tmp_path / "the-dir"
-        only_dir.mkdir()
-        assert _find_must_gather_root(str(tmp_path)) == only_dir
-
 
 class TestListMustGatherContents:
     def test_full_structure(self, must_gather_tree):
@@ -56,7 +67,7 @@ class TestListMustGatherContents:
         assert "openshift-storage" in result["namespaces"]
         assert "default" in result["namespaces"]
         assert result["has_ceph_data"] is True
-        assert len(result["ceph_data_paths"]) > 0
+        assert len(result["ceph_commands"]) > 0
         assert "ceph" in result["top_level_dirs"]
         assert "namespaces" in result["top_level_dirs"]
         assert result["host_service_logs"] is True
@@ -75,18 +86,28 @@ class TestListMustGatherContents:
         assert "storage.k8s.io" in csr
         assert "storageclasses" in csr["storage.k8s.io"]
 
-    def test_ceph_data_detected(self, must_gather_tree):
+    def test_ceph_commands_listed(self, must_gather_tree):
         result = json.loads(list_must_gather_contents(str(must_gather_tree["extracted"])))
         assert result["has_ceph_data"] is True
-        assert any("ceph_health_detail" in p for p in result["ceph_data_paths"])
-        assert any("ceph_status" in p for p in result["ceph_data_paths"])
+        assert "ceph_health_detail" in result["ceph_commands"]
+        assert "ceph_status" in result["ceph_commands"]
+        assert "ceph_osd_tree" in result["ceph_commands"]
+
+    def test_ceph_log_nodes(self, must_gather_tree):
+        result = json.loads(list_must_gather_contents(str(must_gather_tree["extracted"])))
+        assert "ceph_daemon_log_master-0" in result["ceph_log_nodes"]
+        assert "ceph_daemon_log_worker-0" in result["ceph_log_nodes"]
+
+    def test_pod_counts(self, must_gather_tree):
+        result = json.loads(list_must_gather_contents(str(must_gather_tree["extracted"])))
+        assert result["pod_counts"]["openshift-storage"] == 3
 
     def test_no_ceph_data(self, tmp_path):
         root = tmp_path / "extracted" / "must-gather-noceph"
         (root / "namespaces" / "default").mkdir(parents=True)
         result = json.loads(list_must_gather_contents(str(tmp_path / "extracted")))
         assert result["has_ceph_data"] is False
-        assert result["ceph_data_paths"] == []
+        assert result["ceph_commands"] == []
 
     def test_empty_must_gather(self, empty_must_gather):
         result = json.loads(list_must_gather_contents(str(empty_must_gather["extracted"])))
@@ -186,6 +207,28 @@ class TestGetMustGatherResource:
         )
         assert result["resource_type"] == "cephhealth"
         assert "HEALTH_WARN" in result["content"]
+
+    def test_ceph_status_not_fs_status(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(str(must_gather_tree["extracted"]), "cephstatus")
+        )
+        assert result["resource_type"] == "cephstatus"
+        assert "cluster status OK" in result["content"]
+        assert "cephfs" not in result["content"].lower()
+
+    def test_osd_tree(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(str(must_gather_tree["extracted"]), "osdtree")
+        )
+        assert result["resource_type"] == "osdtree"
+        assert "osd tree data" in result["content"]
+
+    def test_osd_dump(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(str(must_gather_tree["extracted"]), "osddump")
+        )
+        assert result["resource_type"] == "osddump"
+        assert "osd dump data" in result["content"]
 
     def test_large_file_truncation(self, must_gather_tree):
         large_node = (
@@ -412,8 +455,8 @@ class TestGetMustGatherPodLogs:
 
     def test_tail_lines(self, must_gather_tree):
         log_path = (
-            must_gather_tree["root"] / "namespaces" / "openshift-storage" / "core" / "pods"
-            / "rook-ceph-mon-a-abc123" / "mon" / "mon" / "current.log"
+            must_gather_tree["root"] / "namespaces" / "openshift-storage" / "pods"
+            / "rook-ceph-mon-a-abc123" / "mon" / "mon" / "logs" / "current.log"
         )
         log_path.write_text("\n".join(f"mon log line {i}" for i in range(50)) + "\n")
         result = json.loads(
@@ -453,8 +496,8 @@ class TestGetMustGatherPodLogs:
 
     def test_large_log_truncation(self, must_gather_tree):
         log_path = (
-            must_gather_tree["root"] / "namespaces" / "openshift-storage" / "core" / "pods"
-            / "rook-ceph-mon-a-abc123" / "mon" / "mon" / "current.log"
+            must_gather_tree["root"] / "namespaces" / "openshift-storage" / "pods"
+            / "rook-ceph-mon-a-abc123" / "mon" / "mon" / "logs" / "current.log"
         )
         large_content = "\n".join(f"line {i} " + "x" * 200 for i in range(2000)) + "\n"
         log_path.write_text(large_content)

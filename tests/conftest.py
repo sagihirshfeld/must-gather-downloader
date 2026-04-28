@@ -106,29 +106,30 @@ def must_gather_tree(tmp_path):
         "  - reason: CrashLoopBackOff\n    message: back-off restarting\n"
     )
 
-    pods_dir = os_ns / "core" / "pods"
+    pods_yaml_dir = os_ns / "core" / "pods"
+    pods_yaml_dir.mkdir(parents=True)
+    (pods_yaml_dir / "rook-ceph-mon-a-abc123.yaml").write_text(
+        "apiVersion: v1\nkind: Pod\nmetadata:\n  name: rook-ceph-mon-a-abc123\n"
+    )
 
-    mon_pod = pods_dir / "rook-ceph-mon-a-abc123" / "mon" / "mon"
+    pods_dir = os_ns / "pods"
+
+    mon_pod = pods_dir / "rook-ceph-mon-a-abc123" / "mon" / "mon" / "logs"
     mon_pod.mkdir(parents=True)
     (mon_pod / "current.log").write_text("mon current log\n")
     (mon_pod / "previous.log").write_text("mon previous log\n")
 
-    osd_pod = pods_dir / "rook-ceph-osd-0-def456" / "osd" / "osd"
+    osd_pod = pods_dir / "rook-ceph-osd-0-def456" / "osd" / "osd" / "logs"
     osd_pod.mkdir(parents=True)
     (osd_pod / "current.log").write_text("osd current log\n")
 
     noobaa_pod = pods_dir / "noobaa-core-0"
-    noobaa_core = noobaa_pod / "noobaa-core" / "noobaa-core"
+    noobaa_core = noobaa_pod / "noobaa-core" / "noobaa-core" / "logs"
     noobaa_core.mkdir(parents=True)
     (noobaa_core / "current.log").write_text("noobaa-core log\n")
-    noobaa_init = noobaa_pod / "init-container" / "init-container"
+    noobaa_init = noobaa_pod / "init-container" / "init-container" / "logs"
     noobaa_init.mkdir(parents=True)
     (noobaa_init / "current.log").write_text("init-container log\n")
-
-    # Pod YAML files for namespaced pod lookup
-    (pods_dir / "rook-ceph-mon-a-abc123.yaml").write_text(
-        "apiVersion: v1\nkind: Pod\nmetadata:\n  name: rook-ceph-mon-a-abc123\n"
-    )
 
     deployments = os_ns / "apps" / "deployments.apps"
     deployments.mkdir(parents=True)
@@ -155,11 +156,17 @@ def must_gather_tree(tmp_path):
         "apiVersion: v1\nkind: EventList\nitems: []\n"
     )
 
-    ceph = root / "ceph"
-    ceph.mkdir(parents=True)
-    (ceph / "ceph_health_detail").write_text("HEALTH_WARN\n")
-    (ceph / "ceph_status").write_text("cluster status OK\n")
-    (ceph / "ceph_osd_dump").write_text("osd dump data\n")
+    ceph_cmds = root / "ceph" / "must_gather_commands"
+    ceph_cmds.mkdir(parents=True)
+    (ceph_cmds / "ceph_health_detail").write_text("HEALTH_WARN\n")
+    (ceph_cmds / "ceph_status").write_text("cluster status OK\n")
+    (ceph_cmds / "ceph_fs_status").write_text("cephfs status data\n")
+    (ceph_cmds / "ceph_osd_dump").write_text("osd dump data\n")
+    (ceph_cmds / "ceph_osd_tree").write_text("osd tree data\n")
+
+    ceph_logs = root / "ceph_logs"
+    (ceph_logs / "ceph_daemon_log_master-0").mkdir(parents=True)
+    (ceph_logs / "ceph_daemon_log_worker-0").mkdir(parents=True)
 
     host_logs = root / "host_service_logs" / "master-0"
     host_logs.mkdir(parents=True)

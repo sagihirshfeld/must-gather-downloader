@@ -212,10 +212,20 @@ def _find_must_gather_root(must_gather_path: str) -> Path:
         raise ValueError(f"Path does not exist: {must_gather_path}")
     if not path.is_dir():
         raise ValueError(f"Path is not a directory: {must_gather_path}")
-    candidates = list(path.rglob("*/namespaces"))
-    if candidates:
-        return candidates[0].parent
-    return path
+
+    for candidate in sorted(path.rglob("namespaces"), key=lambda p: len(p.parts)):
+        if candidate.is_dir():
+            return candidate.parent
+
+    subdirs = sorted(d for d in path.iterdir() if d.is_dir())
+    if not subdirs:
+        raise ValueError(f"No subdirectories found in: {must_gather_path}")
+    if len(subdirs) == 1:
+        return subdirs[0]
+    preferred = [d for d in subdirs if d.name.startswith("must-gather")]
+    if preferred:
+        return preferred[0]
+    return subdirs[0]
 
 
 def _count_files(directory: Path) -> int:
@@ -232,23 +242,6 @@ def _cache_check(cache_entry: Path) -> dict | None:
         except (json.JSONDecodeError, IOError):
             return None
     return None
-
-
-def _find_must_gather_root(must_gather_path: str) -> Path:
-    path = Path(must_gather_path)
-    if not path.exists():
-        raise ValueError(f"Path does not exist: {must_gather_path}")
-    if not path.is_dir():
-        raise ValueError(f"Path is not a directory: {must_gather_path}")
-    subdirs = sorted(d for d in path.iterdir() if d.is_dir())
-    if not subdirs:
-        raise ValueError(f"No subdirectories found in: {must_gather_path}")
-    if len(subdirs) == 1:
-        return subdirs[0]
-    preferred = [d for d in subdirs if d.name.startswith("must-gather")]
-    if preferred:
-        return preferred[0]
-    return subdirs[0]
 
 
 @mcp.tool
@@ -414,8 +407,8 @@ def list_must_gather_contents(must_gather_path: str) -> str:
 
     Returns:
         JSON string with must_gather_root, namespaces, cluster_scoped_resources,
-        has_ceph_data, ceph_data_paths, top_level_dirs, host_service_logs,
-        and total_files
+        has_ceph_data, ceph_commands, ceph_log_nodes, pod_counts,
+        top_level_dirs, host_service_logs, and total_files
     """
     root = _find_must_gather_root(must_gather_path)
 
@@ -435,12 +428,23 @@ def list_must_gather_contents(must_gather_path: str) -> str:
                 if resource_types:
                     cluster_scoped[api_group.name] = resource_types
 
-    ceph_paths = []
-    for d in sorted(root.iterdir()):
-        if d.is_dir() and "ceph" in d.name.lower():
-            for f in sorted(d.rglob("*")):
-                if f.is_file():
-                    ceph_paths.append(str(f.relative_to(root)))
+    ceph_commands_dir = root / "ceph" / "must_gather_commands"
+    ceph_commands = sorted(
+        f.name for f in ceph_commands_dir.iterdir() if f.is_file()
+    ) if ceph_commands_dir.is_dir() else []
+
+    ceph_logs_dir = root / "ceph_logs"
+    ceph_log_nodes = sorted(
+        d.name for d in ceph_logs_dir.iterdir() if d.is_dir()
+    ) if ceph_logs_dir.is_dir() else []
+
+    pod_counts = {}
+    for ns in namespaces:
+        pods_dir = namespaces_dir / ns / "pods"
+        if not pods_dir.is_dir():
+            pods_dir = namespaces_dir / ns / "core" / "pods"
+        if pods_dir.is_dir():
+            pod_counts[ns] = sum(1 for d in pods_dir.iterdir() if d.is_dir())
 
     top_level_dirs = sorted(d.name for d in root.iterdir() if d.is_dir())
 
@@ -450,8 +454,10 @@ def list_must_gather_contents(must_gather_path: str) -> str:
         "must_gather_root": str(root),
         "namespaces": namespaces,
         "cluster_scoped_resources": cluster_scoped,
-        "has_ceph_data": len(ceph_paths) > 0,
-        "ceph_data_paths": ceph_paths,
+        "has_ceph_data": len(ceph_commands) > 0,
+        "ceph_commands": ceph_commands,
+        "ceph_log_nodes": ceph_log_nodes,
+        "pod_counts": pod_counts,
         "top_level_dirs": top_level_dirs,
         "host_service_logs": host_logs_dir.is_dir(),
         "total_files": _count_files(root),
@@ -478,9 +484,11 @@ _NAMESPACED = {
     "deployment": ("apps", "deployments.apps"),
 }
 
-_CEPH_PATTERNS = {
-    "cephhealth": "*ceph*health*",
-    "cephstatus": "*ceph*status*",
+_CEPH_COMMANDS = {
+    "cephhealth": "ceph_health_detail",
+    "cephstatus": "ceph_status",
+    "osdtree": "ceph_osd_tree",
+    "osddump": "ceph_osd_dump",
 }
 
 _MAX_RESOURCE_SIZE = 100 * 1024
@@ -488,7 +496,7 @@ _MAX_RESOURCE_SIZE = 100 * 1024
 _ALL_SUPPORTED_TYPES = sorted(
     list(_CLUSTER_SCOPED.keys())
     + list(_NAMESPACED.keys())
-    + list(_CEPH_PATTERNS.keys())
+    + list(_CEPH_COMMANDS.keys())
     + list(_RESOURCE_ALIASES.keys())
 )
 
@@ -508,7 +516,8 @@ def get_must_gather_resource(
     Args:
         must_gather_path: Path to the extracted must-gather directory
         resource_type: Type of resource (node, pv, sc, events, pod,
-            configmap, secret, deployment, cephhealth, cephstatus)
+            configmap, secret, deployment, cephhealth, cephstatus,
+            osdtree, osddump)
         name: Name of the specific resource (optional — omit to list available names)
         namespace: Namespace for namespaced resources (required for events, pod, etc.)
 
@@ -519,9 +528,12 @@ def get_must_gather_resource(
     rt = resource_type.lower()
     rt = _RESOURCE_ALIASES.get(rt, rt)
 
-    if rt in _CEPH_PATTERNS:
-        pattern = _CEPH_PATTERNS[rt]
-        matches = list(root.rglob(pattern))
+    if rt in _CEPH_COMMANDS:
+        exact_name = _CEPH_COMMANDS[rt]
+        matches = [
+            f for f in root.rglob(exact_name)
+            if f.is_file() and f.name == exact_name
+        ]
         if not matches:
             return json.dumps({"error": f"No {rt} data found in must-gather"})
         target = matches[0]
@@ -742,7 +754,9 @@ def get_must_gather_pod_logs(
         JSON string with available pods list, or pod log contents
     """
     root = _find_must_gather_root(must_gather_path)
-    pods_dir = root / "namespaces" / namespace / "core" / "pods"
+    pods_dir = root / "namespaces" / namespace / "pods"
+    if not pods_dir.exists():
+        pods_dir = root / "namespaces" / namespace / "core" / "pods"
 
     if not pods_dir.exists():
         namespaces_dir = root / "namespaces"
