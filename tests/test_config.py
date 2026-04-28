@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from must_gather_downloader.server import _get_config
+from must_gather_downloader.server import _get_config, _ssl_verify
 
 
 class TestGetConfig:
@@ -38,3 +38,21 @@ class TestGetConfig:
         monkeypatch.delenv("MUST_GATHER_CACHE_DIR", raising=False)
         _, base_url, _ = _get_config()
         assert base_url == "https://rp.example.com"
+
+
+class TestSslVerify:
+    def test_default_is_true(self, monkeypatch):
+        monkeypatch.delenv("RP_SSL_VERIFY", raising=False)
+        assert _ssl_verify() is True
+
+    def test_explicit_true(self, monkeypatch):
+        monkeypatch.setenv("RP_SSL_VERIFY", "true")
+        assert _ssl_verify() is True
+
+    def test_false(self, monkeypatch):
+        monkeypatch.setenv("RP_SSL_VERIFY", "false")
+        assert _ssl_verify() is False
+
+    def test_ca_bundle_path(self, monkeypatch):
+        monkeypatch.setenv("RP_SSL_VERIFY", "/etc/pki/tls/certs/ca-bundle.crt")
+        assert _ssl_verify() == "/etc/pki/tls/certs/ca-bundle.crt"

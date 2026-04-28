@@ -17,6 +17,15 @@ mcp = FastMCP("must-gather")
 RP_PROJECT = "ocs"
 
 
+def _ssl_verify() -> bool | str:
+    val = os.environ.get("RP_SSL_VERIFY", "true").strip().lower()
+    if val == "false":
+        return False
+    if val == "true":
+        return True
+    return val
+
+
 def _get_config():
     api_key = os.environ.get("RP_API_KEY", "")
     base_url = os.environ.get("RP_BASE_URL", "").strip().strip("\"'").rstrip("/")
@@ -58,7 +67,7 @@ def _rp_headers(api_key: str) -> dict:
 
 
 def _fetch_json(url: str, api_key: str) -> dict:
-    resp = requests.get(url, headers=_rp_headers(api_key), timeout=30)
+    resp = requests.get(url, headers=_rp_headers(api_key), timeout=30, verify=_ssl_verify())
     resp.raise_for_status()
     return resp.json()
 
@@ -69,7 +78,7 @@ def _fetch_html_lines(url: str, api_key: str = "") -> list[str]:
     }
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-    resp = requests.get(url, headers=headers, timeout=30)
+    resp = requests.get(url, headers=headers, timeout=30, verify=_ssl_verify())
     resp.raise_for_status()
     return [line for line in resp.text.split("\n") if line.strip()]
 
@@ -184,7 +193,7 @@ def _download_tarball(url: str, dest: Path, api_key: str = "") -> None:
     headers = {}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-    with requests.get(url, headers=headers, stream=True, timeout=300) as resp:
+    with requests.get(url, headers=headers, stream=True, timeout=300, verify=_ssl_verify()) as resp:
         resp.raise_for_status()
         with open(dest, "wb") as f:
             for chunk in resp.iter_content(chunk_size=8192):
