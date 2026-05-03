@@ -134,8 +134,15 @@ def get_noobaa_resource(
                 }
             )
         content = target.read_text(encoding="utf-8", errors="replace")
-        result: dict = {"resource_type": "diagnostics", "name": name, "path": str(target)}
-        truncate_content(result, content, target)
+        content, truncated = truncate_log_from_tail(content, tail, _MAX_RESOURCE_SIZE)
+        result: dict = {
+            "resource_type": "diagnostics",
+            "name": name,
+            "path": str(target),
+            "lines": len(content.splitlines()),
+            "content": content,
+            "truncated": truncated,
+        }
         return json.dumps(result)
 
     if rt == "logs":

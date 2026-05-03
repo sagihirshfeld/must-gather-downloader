@@ -241,10 +241,14 @@ def must_gather_tree(tmp_path):
     diag_content_dir.mkdir()
     (diag_content_dir / "noobaa_core_describe.txt").write_text("pod describe output\n")
     (diag_content_dir / "noobaa_db_dump.json").write_text('{"buckets": []}\n')
+    (diag_content_dir / "noobaa-core-0-core.log").write_text(
+        "".join(f"2025-01-15T03:38:{i:02d}.000Z core log line {i}\n" for i in range(10))
+    )
     diag_tarball = noobaa_raw / "noobaa_diagnostics_20250115.tar.gz"
     with tarfile.open(diag_tarball, "w:gz") as tar:
         tar.add(diag_content_dir / "noobaa_core_describe.txt", arcname="noobaa_core_describe.txt")
         tar.add(diag_content_dir / "noobaa_db_dump.json", arcname="noobaa_db_dump.json")
+        tar.add(diag_content_dir / "noobaa-core-0-core.log", arcname="noobaa-core-0-core.log")
 
     noobaa_logs = noobaa / "logs" / "openshift-storage"
     noobaa_logs.mkdir(parents=True)

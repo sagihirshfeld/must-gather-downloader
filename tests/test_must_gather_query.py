@@ -604,6 +604,22 @@ class TestGetNoobaaResource:
         get_noobaa_resource(str(must_gather_tree["extracted"]), "diagnostics")
         assert extract_dir.stat().st_mtime == mtime_before
 
+    def test_noobaa_diagnostics_tail(self, must_gather_tree):
+        result = json.loads(
+            get_noobaa_resource(
+                str(must_gather_tree["extracted"]),
+                "diagnostics",
+                name="noobaa-core-0-core.log",
+                tail=3,
+            )
+        )
+        assert result["resource_type"] == "diagnostics"
+        assert result["lines"] == 3
+        assert "core log line 9" in result["content"]
+        assert "core log line 7" in result["content"]
+        assert "core log line 6" not in result["content"]
+        assert result["truncated"] is False
+
     def test_noobaa_diagnostics_file_not_found(self, must_gather_tree):
         result = json.loads(get_noobaa_resource(str(must_gather_tree["extracted"]), "diagnostics", name="nonexistent"))
         assert "error" in result
