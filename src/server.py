@@ -243,9 +243,17 @@ def search_pod_logs(
         context_before, context_after, pod, container, and log_file
     """
     return _search_pod_logs_impl(
-        must_gather_path, namespace, pod_name, pattern,
-        container, previous, context_lines, max_results,
-        case_sensitive, time_from, time_to,
+        must_gather_path,
+        namespace,
+        pod_name,
+        pattern,
+        container,
+        previous,
+        context_lines,
+        max_results,
+        case_sensitive,
+        time_from,
+        time_to,
     )
 
 

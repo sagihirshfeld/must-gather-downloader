@@ -3,7 +3,6 @@ import json
 from unittest.mock import patch
 
 import pytest
-
 from must_gather_downloader.download import download_must_gather
 
 MODULE = "must_gather_downloader.download"

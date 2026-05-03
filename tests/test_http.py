@@ -2,7 +2,6 @@ from unittest.mock import patch
 
 import pytest
 import requests
-
 from must_gather_downloader.download import _download_tarball
 from must_gather_downloader.reportportal import (
     _fetch_html_lines,

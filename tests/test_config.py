@@ -2,7 +2,6 @@ import logging
 from pathlib import Path
 
 import pytest
-
 from must_gather_downloader.config import _get_config, _ssl_verify
 
 

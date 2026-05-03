@@ -1,7 +1,6 @@
 import json
 
 import pytest
-
 from must_gather_downloader.navigate import _count_files_and_size, _find_must_gather_root
 from must_gather_downloader.noobaa import get_noobaa_resource
 from must_gather_downloader.pod_logs import get_must_gather_pod_logs

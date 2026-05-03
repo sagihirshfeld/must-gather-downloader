@@ -1,7 +1,6 @@
 from unittest.mock import patch
 
 import pytest
-
 from must_gather_downloader.download import _find_tarball_url, _resolve_test_log_directory
 
 MODULE = "must_gather_downloader.download"
