@@ -18,7 +18,7 @@ Given a ReportPortal test log URL, it resolves the corresponding Magna logs dire
 
 ## Prerequisites
 
-- Python 3.12+
+- [uv](https://docs.astral.sh/uv/) (includes `uvx`)
 - ReportPortal API access (API key + base URL)
 - Network access to Magna logs server
 
