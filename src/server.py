@@ -281,11 +281,10 @@ def search_pod_logs(
 def get_ocs_ci_test_log(
     reportportal_url: str,
     test_name: str,
-    exclude_debug: bool = True,
     tail: int = 0,
     head: int = 0,
 ) -> str:
-    """Retrieve OCS-CI per-test debug log from a ReportPortal launch.
+    """Retrieve OCS-CI test log from a ReportPortal launch.
 
     Use this to see the test execution trace -- what the test framework did
     step by step, including setup, teardown, assertions, and oc commands.
@@ -294,32 +293,24 @@ def get_ocs_ci_test_log(
     Does not require downloading a must-gather first; fetches directly
     from Magna.
 
-    These logs contain DEBUG-level output including full YAML dumps
-    from 'oc get' commands. By default, DEBUG lines are filtered out
-    to save tokens. Set exclude_debug=False when you need to examine:
-    - Full 'oc get' command output (Pod specs, StorageCluster YAML)
-    - Resource configuration details and return codes
-    - Ceph internal status dumps and OSD diagnostics
-    - Command stdout/stderr content for troubleshooting
-
-    With filtering on (default), only INFO, WARNING, ERROR, and custom
-    OCS-CI levels (TEST_STEP, ASSERTION) are returned.
+    Extracts the test's section from the full deploy log by finding the
+    pytest test header and collecting everything up to the next test.
+    ANSI escape codes are stripped from the output.
 
     Args:
         reportportal_url: Full ReportPortal URL to a test log page
             (must contain '/launches/' and '/log')
         test_name: Test function name, e.g.
             'test_bucket_notifications[default-logs-pvc]'.
-            Supports partial/substring matching against directory names.
-        exclude_debug: Filter out DEBUG-level log lines (default True)
-        tail: Return only the last N lines after filtering (0 = all)
-        head: Return only the first N lines after filtering (0 = all)
+            Matched as a substring against pytest nodeids in the log.
+        tail: Return only the last N lines after extraction (0 = all)
+        head: Return only the first N lines after extraction (0 = all)
 
     Returns:
         JSON string with test log content and metadata including
         line counts and truncation info
     """
-    return _ocs_ci_log_impl(reportportal_url, test_name, exclude_debug, tail, head)
+    return _ocs_ci_log_impl(reportportal_url, test_name, tail, head)
 
 
 def main():

@@ -4,9 +4,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 from must_gather_downloader.ocs_ci_logs import (
-    _fetch_and_filter_log,
-    _find_test_log_url,
-    _normalize_test_name,
+    _extract_test_section,
+    _fetch_and_extract_test,
+    _find_deploy_log_url,
+    _strip_ansi,
     get_ocs_ci_test_log,
 )
 
@@ -14,260 +15,232 @@ MODULE = "must_gather_downloader.ocs_ci_logs"
 RP_MODULE = "must_gather_downloader.reportportal"
 
 
-class TestNormalizeTestName:
-    def test_simple_name(self):
-        assert _normalize_test_name("test_foo") == "test_foo"
+class TestStripAnsi:
+    def test_removes_codes(self):
+        assert _strip_ansi("\x1b[32mINFO\x1b[0m") == "INFO"
 
-    def test_single_param(self):
-        assert _normalize_test_name("test_foo[bar]") == "test_foo-bar"
+    def test_no_codes(self):
+        assert _strip_ansi("plain text") == "plain text"
 
-    def test_multi_param(self):
-        assert _normalize_test_name("test_foo[bar-baz]") == "test_foo-bar-baz"
-
-    def test_no_brackets(self):
-        assert _normalize_test_name("test_bucket_notifications") == "test_bucket_notifications"
-
-    def test_complex_params(self):
-        assert _normalize_test_name("test_foo[a][b]") == "test_foo-a-b"
+    def test_bold_and_color(self):
+        assert _strip_ansi("\x1b[1m--- live log ---\x1b[0m") == "--- live log ---"
 
 
 LOGS_PAGE_HTML = [
-    '<a href="ocs-ci-logs-111/">ocs-ci-logs-111/</a>',
-    '<a href="ocs-ci-logs-222/">ocs-ci-logs-222/</a>',
-    '<a href="deploy-log.log">deploy-log.log</a>',
-]
-
-TESTS_DIR_HTML = [
-    '<a href="functional/">functional/</a>',
-]
-
-FUNCTIONAL_DIR_HTML = [
-    '<a href="object/">object/</a>',
-]
-
-OBJECT_DIR_HTML = [
-    '<a href="mcg/">mcg/</a>',
-]
-
-MCG_DIR_HTML = [
-    '<a href="test_bucket_notifications.py/">test_bucket_notifications.py/</a>',
-    '<a href="test_other.py/">test_other.py/</a>',
-]
-
-CLASS_DIR_HTML = [
-    '<a href="TestBucketNotifications/">TestBucketNotifications/</a>',
-]
-
-TEST_DIR_HTML = [
-    '<a href="test_bucket_notifications-default-logs-pvc/">test_bucket_notifications-default-logs-pvc/</a>',
+    '<tr><td><a href="deploy-ocs-cluster-build-12345.log">deploy-ocs-cluster-build-12345.log</a></td>'
+    '<td align="right">2026-04-30 19:59</td><td align="right">8.7M</td></tr>',
+    '<tr><td><a href="destroy-ocs-cluster-build-99999.log">destroy-ocs-cluster-build-99999.log</a></td>'
+    '<td align="right">2026-04-30 20:13</td><td align="right">  0 </td></tr>',
+    '<tr><td><a href="ocs-ci-logs-111/">ocs-ci-logs-111/</a></td></tr>',
 ]
 
 
-class TestFindTestLogUrl:
+class TestFindDeployLogUrl:
     @patch(f"{MODULE}._fetch_html_lines")
-    def test_found_in_first_dir(self, mock_fetch):
-        mock_fetch.side_effect = [
-            LOGS_PAGE_HTML,
-            TESTS_DIR_HTML,
-            FUNCTIONAL_DIR_HTML,
-            OBJECT_DIR_HTML,
-            MCG_DIR_HTML,
-            CLASS_DIR_HTML,
-            TEST_DIR_HTML,
-            [],
-            # Second ocs-ci-logs dir: empty tests
-            ['<a href="functional/">functional/</a>'],
-            [],
-        ]
-
-        log_url, ocs_dir = _find_test_log_url(
-            "https://magna.example.com/cluster/", "test_bucket_notifications[default-logs-pvc]", "key"
-        )
-        assert "test_bucket_notifications-default-logs-pvc/logs" in log_url
-        assert ocs_dir == "ocs-ci-logs-111"
+    def test_single_deploy_log(self, mock_fetch):
+        mock_fetch.return_value = LOGS_PAGE_HTML
+        url, name = _find_deploy_log_url("https://magna.example.com/cluster/", "key")
+        assert name == "deploy-ocs-cluster-build-12345.log"
+        assert url.endswith("deploy-ocs-cluster-build-12345.log")
 
     @patch(f"{MODULE}._fetch_html_lines")
-    def test_not_found_raises(self, mock_fetch):
-        mock_fetch.side_effect = [
-            LOGS_PAGE_HTML,
-            # Dir 1: no matching test
-            ['<a href="functional/">functional/</a>'],
-            [],
-            # Dir 2: no matching test
-            ['<a href="functional/">functional/</a>'],
-            [],
-        ]
-
-        with pytest.raises(ValueError, match="not found"):
-            _find_test_log_url("https://magna.example.com/cluster/", "test_nonexistent", "key")
-
-    @patch(f"{MODULE}._fetch_html_lines")
-    def test_no_ocs_ci_dirs(self, mock_fetch):
+    def test_multiple_deploy_logs_picks_largest(self, mock_fetch):
         mock_fetch.return_value = [
-            '<a href="deploy-log.log">deploy-log.log</a>',
-            '<a href="some-other-dir/">some-other-dir/</a>',
+            '<tr><td><a href="deploy-ocs-cluster-build-111.log">f1</a></td>'
+            '<td align="right">2026</td><td align="right">1.2M</td></tr>',
+            '<tr><td><a href="deploy-ocs-cluster-build-222.log">f2</a></td>'
+            '<td align="right">2026</td><td align="right">8.7M</td></tr>',
         ]
-
-        with pytest.raises(ValueError, match="No ocs-ci-logs"):
-            _find_test_log_url("https://magna.example.com/cluster/", "test_foo", "key")
+        url, name = _find_deploy_log_url("https://magna.example.com/cluster/", "key")
+        assert name == "deploy-ocs-cluster-build-222.log"
 
     @patch(f"{MODULE}._fetch_html_lines")
-    def test_partial_match(self, mock_fetch):
-        mock_fetch.side_effect = [
-            ['<a href="ocs-ci-logs-111/">ocs-ci-logs-111/</a>'],
-            ['<a href="test_bucket_notifications-default-logs-pvc/">test_bucket_notifications-default-logs-pvc/</a>'],
-            [],
+    def test_no_deploy_log_raises(self, mock_fetch):
+        mock_fetch.return_value = [
+            '<tr><td><a href="other-file.log">other-file.log</a></td></tr>',
         ]
-
-        log_url, _ = _find_test_log_url("https://magna.example.com/cluster/", "test_bucket_notifications", "key")
-        assert "test_bucket_notifications-default-logs-pvc/logs" in log_url
+        with pytest.raises(ValueError, match="No deploy log file"):
+            _find_deploy_log_url("https://magna.example.com/cluster/", "key")
 
     @patch(f"{MODULE}._fetch_html_lines")
-    def test_multiple_matches_raises(self, mock_fetch):
-        mock_fetch.side_effect = [
-            ['<a href="ocs-ci-logs-111/">ocs-ci-logs-111/</a>'],
-            [
-                '<a href="test_bucket_notifications-default-logs-pvc/">match1/</a>',
-                '<a href="test_bucket_notifications-provided-logs-pvc/">match2/</a>',
-            ],
-            [],
-            [],
+    def test_no_size_info_picks_first(self, mock_fetch):
+        mock_fetch.return_value = [
+            '<a href="deploy-ocs-cluster-build-111.log">f1</a>',
+            '<a href="deploy-ocs-cluster-build-222.log">f2</a>',
         ]
-
-        with pytest.raises(ValueError, match="Multiple matches"):
-            _find_test_log_url("https://magna.example.com/cluster/", "test_bucket_notifications", "key")
-
-    @patch(f"{MODULE}._fetch_html_lines")
-    def test_http_error_skips_dir(self, mock_fetch):
-        def side_effect(url, api_key=""):
-            if "ocs-ci-logs-111" in url:
-                raise requests.HTTPError("404")
-            if "ocs-ci-logs-222" in url and "tests" in url:
-                return ['<a href="test_foo/">test_foo/</a>']
-            if "test_foo" in url:
-                return []
-            return [
-                '<a href="ocs-ci-logs-111/">ocs-ci-logs-111/</a>',
-                '<a href="ocs-ci-logs-222/">ocs-ci-logs-222/</a>',
-            ]
-
-        mock_fetch.side_effect = side_effect
-
-        log_url, ocs_dir = _find_test_log_url("https://magna.example.com/cluster/", "test_foo", "key")
-        assert ocs_dir == "ocs-ci-logs-222"
+        _, name = _find_deploy_log_url("https://magna.example.com/cluster/", "key")
+        assert name == "deploy-ocs-cluster-build-111.log"
 
 
-SAMPLE_LOG = (
-    "2026-03-25 07:15:08,069 - MainThread - INFO - ocs_ci.framework - setup started\n"
-    "2026-03-25 07:15:08,070 - MainThread - DEBUG - ocs_ci.utility.utils - Command stdout: apiVersion: v1\n"
-    "kind: Pod\n"
-    "metadata:\n"
-    "  name: test-pod\n"
-    "2026-03-25 07:15:08,209 - MainThread - DEBUG - ocs_ci.utility.utils - Command return code: 0\n"
-    "2026-03-25 07:15:08,210 - MainThread - INFO - ocs_ci.utility.utils - Executing command: oc get pods\n"
-    "2026-03-25 07:15:09,000 - MainThread - WARNING - ocs_ci.ocs.resources - Pod not ready\n"
-    "2026-03-25 07:15:10,000 - MainThread - ERROR - ocs_ci.ocs.resources - Test failed\n"
-    "2026-03-25 07:15:11,000 - MainThread - INFO - ocs_ci.framework - teardown done\n"
+_TS = "[2026-04-30T08:00:00.000Z]"
+_SETUP = f"{_TS} \x1b[1m------------ live log setup ------------\x1b[0m"
+DEPLOY_LOG = (
+    f"{_TS} collected 10 items\n"
+    f"{_TS} \n"
+    f"{_TS} tests/functional/test_foo.py::TestFoo::test_alpha[param1] \n"
+    f"{_SETUP}\n"
+    f"{_TS} 04:00:01 - MainThread - INFO - setup alpha\n"
+    f"{_TS} 04:00:02 - MainThread - INFO - running alpha\n"
+    f"{_TS} duration reported by test_alpha[param1] after exec: 2.0\n"
+    f"{_TS} \x1b[32mPASSED\x1b[0m\n"
+    f"{_TS} memory stats line\n"
+    f"{_TS} \n"
+    f"{_TS} tests/functional/test_foo.py::TestFoo::test_beta \n"
+    f"{_SETUP}\n"
+    f"{_TS} 04:00:06 - MainThread - INFO - setup beta\n"
+    f"{_TS} 04:00:07 - MainThread - INFO - running beta\n"
+    f"{_TS} duration reported by test_beta after exec: 3.0\n"
+    f"{_TS} \x1b[31mFAILED\x1b[0m\n"
+    f"{_TS} teardown stats\n"
 )
 
 
-class TestFetchAndFilterLog:
+class TestExtractTestSection:
+    def test_extract_first_test(self):
+        lines = DEPLOY_LOG.splitlines()
+        result = _extract_test_section(lines, "test_alpha[param1]")
+        content = "\n".join(result)
+        assert "setup alpha" in content
+        assert "running alpha" in content
+        assert "memory stats line" in content
+        assert "setup beta" not in content
+
+    def test_extract_second_test(self):
+        lines = DEPLOY_LOG.splitlines()
+        result = _extract_test_section(lines, "test_beta")
+        content = "\n".join(result)
+        assert "setup beta" in content
+        assert "running beta" in content
+        assert "teardown stats" in content
+        assert "setup alpha" not in content
+
+    def test_last_test_includes_to_end(self):
+        lines = DEPLOY_LOG.splitlines()
+        result = _extract_test_section(lines, "test_beta")
+        assert result[-1].strip() != ""
+        content = "\n".join(result)
+        assert "teardown stats" in content
+
+    def test_not_found_raises(self):
+        lines = DEPLOY_LOG.splitlines()
+        with pytest.raises(ValueError, match="not found"):
+            _extract_test_section(lines, "test_nonexistent")
+
+    def test_ansi_stripped(self):
+        lines = DEPLOY_LOG.splitlines()
+        result = _extract_test_section(lines, "test_alpha[param1]")
+        for line in result:
+            assert "\x1b[" not in line
+
+    def test_multiple_sections_concatenated(self):
+        log = (
+            "[T] tests/test_a.py::test_run \n"
+            "[T] \x1b[1m--- live log setup ---\x1b[0m\n"
+            "[T] first run\n"
+            "[T] tests/test_b.py::test_other \n"
+            "[T] \x1b[1m--- live log setup ---\x1b[0m\n"
+            "[T] other test\n"
+            "[T] tests/test_a.py::test_run \n"
+            "[T] \x1b[1m--- live log setup ---\x1b[0m\n"
+            "[T] second run\n"
+        )
+        lines = log.splitlines()
+        result = _extract_test_section(lines, "test_run")
+        content = "\n".join(result)
+        assert "first run" in content
+        assert "second run" in content
+        assert "section 2" in content.lower()
+
+    def test_substring_match_on_nodeid(self):
+        lines = DEPLOY_LOG.splitlines()
+        result = _extract_test_section(lines, "test_alpha")
+        content = "\n".join(result)
+        assert "setup alpha" in content
+
+    def test_parameterized_exact_match(self):
+        log = (
+            "[T] tests/test.py::Test::test_foo[bar] \n"
+            "[T] \x1b[1m--- live log setup ---\x1b[0m\n"
+            "[T] bar content\n"
+            "[T] tests/test.py::Test::test_foo[baz] \n"
+            "[T] \x1b[1m--- live log setup ---\x1b[0m\n"
+            "[T] baz content\n"
+        )
+        lines = log.splitlines()
+        result = _extract_test_section(lines, "test_foo[bar]")
+        content = "\n".join(result)
+        assert "bar content" in content
+        assert "baz content" not in content
+
+
+class TestFetchAndExtractTest:
     @patch(f"{MODULE}.requests.get")
-    def test_debug_filtering(self, mock_get):
+    def test_basic_extraction(self, mock_get):
         resp = MagicMock()
-        resp.text = SAMPLE_LOG
+        resp.text = DEPLOY_LOG
         resp.raise_for_status.return_value = None
         mock_get.return_value = resp
 
-        content, meta = _fetch_and_filter_log("https://magna.example.com/logs", "key", exclude_debug=True)
-        assert "- DEBUG -" not in content
-        assert "- INFO -" in content
-        assert "- WARNING -" in content
-        assert "- ERROR -" in content
-        assert meta["total_lines_raw"] == 10
-        assert meta["total_lines_after_filter"] == 8
-
-    @patch(f"{MODULE}.requests.get")
-    def test_no_debug_filtering(self, mock_get):
-        resp = MagicMock()
-        resp.text = SAMPLE_LOG
-        resp.raise_for_status.return_value = None
-        mock_get.return_value = resp
-
-        content, meta = _fetch_and_filter_log("https://magna.example.com/logs", "key", exclude_debug=False)
-        assert "- DEBUG -" in content
-        assert meta["total_lines_after_filter"] == 10
+        content, meta = _fetch_and_extract_test("https://magna.example.com/deploy.log", "key", "test_alpha[param1]")
+        assert "setup alpha" in content
+        assert "setup beta" not in content
+        assert meta["total_lines_deploy_log"] == len(DEPLOY_LOG.splitlines())
+        assert meta["total_lines_extracted"] > 0
 
     @patch(f"{MODULE}.requests.get")
     def test_tail(self, mock_get):
         resp = MagicMock()
-        resp.text = SAMPLE_LOG
+        resp.text = DEPLOY_LOG
         resp.raise_for_status.return_value = None
         mock_get.return_value = resp
 
-        content, meta = _fetch_and_filter_log("https://magna.example.com/logs", "key", exclude_debug=True, tail=2)
+        content, meta = _fetch_and_extract_test(
+            "https://magna.example.com/deploy.log", "key", "test_alpha[param1]", tail=2
+        )
         lines = content.strip().splitlines()
         assert len(lines) == 2
-        assert "teardown done" in lines[-1]
 
     @patch(f"{MODULE}.requests.get")
     def test_head(self, mock_get):
         resp = MagicMock()
-        resp.text = SAMPLE_LOG
+        resp.text = DEPLOY_LOG
         resp.raise_for_status.return_value = None
         mock_get.return_value = resp
 
-        content, meta = _fetch_and_filter_log("https://magna.example.com/logs", "key", exclude_debug=True, head=2)
+        content, meta = _fetch_and_extract_test(
+            "https://magna.example.com/deploy.log", "key", "test_alpha[param1]", head=2
+        )
         lines = content.strip().splitlines()
         assert len(lines) == 2
-        assert "setup started" in lines[0]
 
     def test_head_and_tail_error(self):
         with pytest.raises(ValueError, match="Cannot specify both"):
-            _fetch_and_filter_log("https://magna.example.com/logs", "key", head=10, tail=10)
+            _fetch_and_extract_test("url", "key", "test", head=10, tail=10)
 
     @patch(f"{MODULE}.requests.get")
     def test_max_size_truncation(self, mock_get):
-        large_log = "\n".join(f"line {i}" for i in range(100000)) + "\n"
+        big_log = (
+            "[T] tests/test.py::test_big \n"
+            "[T] \x1b[1m--- live log setup ---\x1b[0m\n" + "\n".join(f"[T] line {i}" for i in range(100000)) + "\n"
+        )
         resp = MagicMock()
-        resp.text = large_log
+        resp.text = big_log
         resp.raise_for_status.return_value = None
         mock_get.return_value = resp
 
-        content, meta = _fetch_and_filter_log("https://magna.example.com/logs", "key", exclude_debug=False)
+        content, meta = _fetch_and_extract_test("https://magna.example.com/deploy.log", "key", "test_big")
         assert meta["truncated"]
         assert len(content.encode("utf-8")) <= 200 * 1024 + 100
 
     @patch(f"{MODULE}.requests.get")
-    def test_line_counts(self, mock_get):
+    def test_test_not_found(self, mock_get):
         resp = MagicMock()
-        resp.text = SAMPLE_LOG
+        resp.text = DEPLOY_LOG
         resp.raise_for_status.return_value = None
         mock_get.return_value = resp
 
-        content, meta = _fetch_and_filter_log("https://magna.example.com/logs", "key", exclude_debug=True)
-        assert meta["lines_returned"] == meta["total_lines_after_filter"]
-        assert meta["total_lines_raw"] > meta["total_lines_after_filter"]
-
-    @patch(f"{MODULE}.requests.get")
-    def test_debug_filter_preserves_multiline_context(self, mock_get):
-        log = (
-            "2026 - MainThread - INFO - start\n"
-            "2026 - MainThread - DEBUG - Command stdout: apiVersion: v1\n"
-            "kind: Pod\n"
-            "2026 - MainThread - INFO - end\n"
-        )
-        resp = MagicMock()
-        resp.text = log
-        resp.raise_for_status.return_value = None
-        mock_get.return_value = resp
-
-        content, meta = _fetch_and_filter_log("https://magna.example.com/logs", "key", exclude_debug=True)
-        lines = content.strip().splitlines()
-        assert len(lines) == 3
-        assert "start" in lines[0]
-        assert "kind: Pod" in lines[1]
-        assert "end" in lines[2]
+        with pytest.raises(ValueError, match="not found"):
+            _fetch_and_extract_test("https://magna.example.com/deploy.log", "key", "test_nonexistent")
 
 
 LAUNCH_JSON = {
@@ -277,18 +250,18 @@ ITEM_JSON = {"name": "test_my_feature[param1]"}
 
 
 class TestGetOcsCiTestLog:
-    @patch(f"{MODULE}._find_test_log_url")
+    @patch(f"{MODULE}._find_deploy_log_url")
     @patch(f"{RP_MODULE}._fetch_json")
-    @patch(f"{MODULE}._fetch_and_filter_log")
-    def test_success(self, mock_filter, mock_json, mock_find, env_config):
+    @patch(f"{MODULE}._fetch_and_extract_test")
+    def test_success(self, mock_extract, mock_json, mock_find, env_config):
         mock_json.side_effect = [LAUNCH_JSON, ITEM_JSON]
-        mock_find.return_value = ("https://magna.example.com/logs/file", "ocs-ci-logs-111")
-        mock_filter.return_value = (
+        mock_find.return_value = ("https://magna.example.com/logs/deploy.log", "deploy.log")
+        mock_extract.return_value = (
             "log content\n",
             {
-                "total_lines_raw": 100,
-                "total_lines_after_filter": 50,
-                "lines_returned": 50,
+                "total_lines_deploy_log": 50000,
+                "total_lines_extracted": 100,
+                "lines_returned": 100,
                 "truncated": False,
             },
         )
@@ -300,9 +273,10 @@ class TestGetOcsCiTestLog:
             )
         )
         assert result["test_name"] == "test_my_feature[param1]"
-        assert result["ocs_ci_dir"] == "ocs-ci-logs-111"
+        assert result["deploy_log"] == "deploy.log"
         assert result["content"] == "log content\n"
-        assert result["exclude_debug"] is True
+        assert "exclude_debug" not in result
+        assert "ocs_ci_dir" not in result
 
     @patch(f"{RP_MODULE}._fetch_json")
     def test_rp_error(self, mock_json, env_config):
@@ -320,11 +294,11 @@ class TestGetOcsCiTestLog:
         result = json.loads(get_ocs_ci_test_log("https://not-a-valid-url.com", "test_foo"))
         assert "error" in result
 
-    @patch(f"{MODULE}._find_test_log_url")
+    @patch(f"{MODULE}._find_deploy_log_url")
     @patch(f"{RP_MODULE}._fetch_json")
-    def test_test_not_found(self, mock_json, mock_find, env_config):
+    def test_no_deploy_log(self, mock_json, mock_find, env_config):
         mock_json.side_effect = [LAUNCH_JSON, ITEM_JSON]
-        mock_find.side_effect = ValueError("Test 'test_foo' not found")
+        mock_find.side_effect = ValueError("No deploy log file found")
 
         result = json.loads(
             get_ocs_ci_test_log(
@@ -333,15 +307,15 @@ class TestGetOcsCiTestLog:
             )
         )
         assert "error" in result
-        assert "not found" in result["error"]
+        assert "No deploy log" in result["error"]
 
-    @patch(f"{MODULE}._find_test_log_url")
+    @patch(f"{MODULE}._find_deploy_log_url")
     @patch(f"{RP_MODULE}._fetch_json")
-    @patch(f"{MODULE}._fetch_and_filter_log")
-    def test_head_tail_conflict(self, mock_filter, mock_json, mock_find, env_config):
+    @patch(f"{MODULE}._fetch_and_extract_test")
+    def test_head_tail_conflict(self, mock_extract, mock_json, mock_find, env_config):
         mock_json.side_effect = [LAUNCH_JSON, ITEM_JSON]
-        mock_find.return_value = ("https://magna.example.com/logs/file", "ocs-ci-logs-111")
-        mock_filter.side_effect = ValueError("Cannot specify both head and tail")
+        mock_find.return_value = ("https://magna.example.com/logs/deploy.log", "deploy.log")
+        mock_extract.side_effect = ValueError("Cannot specify both head and tail")
 
         result = json.loads(
             get_ocs_ci_test_log(

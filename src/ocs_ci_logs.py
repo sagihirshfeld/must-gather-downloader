@@ -1,7 +1,7 @@
-"""OCS-CI per-test log retrieval from Magna directory listings."""
+"""OCS-CI test log retrieval from deploy logs on Magna."""
 
 import json
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import re
 
 import requests
 
@@ -15,126 +15,140 @@ from .reportportal import (
 from .resource_utils import truncate_log_from_tail
 from .text import MAX_LOG_SIZE
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+_DEPLOY_LOG_PREFIX = "deploy-ocs-cluster-build"
 
-def _normalize_test_name(test_name: str) -> str:
-    """Normalize a test name for directory matching.
 
-    OCS-CI replaces brackets with dashes in directory names:
-    ``test_foo[bar-baz]`` becomes ``test_foo-bar-baz``.
+def _strip_ansi(text: str) -> str:
+    return _ANSI_RE.sub("", text)
+
+
+def _is_test_header(line: str, next_line: str) -> bool:
+    """Check if line + next_line form a pytest test header."""
+    clean = _strip_ansi(line)
+    clean_next = _strip_ansi(next_line)
+    return "] tests/" in clean and ".py::" in clean and "live log setup" in clean_next
+
+
+def _find_deploy_log_url(logs_url_root: str, api_key: str) -> tuple[str, str]:
+    """Find the deploy log file URL from the Magna logs directory.
+
+    Looks for files starting with ``deploy-ocs-cluster-build`` and ending
+    in ``.log``. If multiple exist, picks the largest by parsing sizes
+    from the Apache directory listing HTML.
 
     Args:
-        test_name: Raw test name, possibly with bracket parameters.
-
-    Returns:
-        Normalized name suitable for directory path matching.
-    """
-    return test_name.replace("[", "-").replace("]", "")
-
-
-def _recursive_search(base_url: str, target: str, api_key: str) -> list[str]:
-    """Recursively search Apache directory listings for a directory name.
-
-    Walks the directory tree starting from *base_url* and returns URLs of
-    directories whose name contains *target* as a substring.
-
-    Args:
-        base_url: URL of the directory to start searching from.
-        target: Normalized test name to search for (substring match).
+        logs_url_root: Magna base URL for the launch.
         api_key: Bearer token for Magna.
 
     Returns:
-        List of full URLs to directories matching the target.
-    """
-    lines = _fetch_html_lines(base_url, api_key)
-    hrefs = _extract_hrefs(lines)
-
-    subdirs = [h for h in hrefs if h.endswith("/") and not h.startswith("?") and not h.startswith("/")]
-
-    matches: list[str] = []
-    for subdir in subdirs:
-        clean = subdir.rstrip("/")
-        if target in clean:
-            matches.append(f"{base_url.rstrip('/')}/{subdir}")
-        else:
-            matches.extend(_recursive_search(f"{base_url.rstrip('/')}/{subdir}", target, api_key))
-    return matches
-
-
-def _find_test_log_url(
-    logs_url_root: str,
-    test_name: str,
-    api_key: str,
-) -> tuple[str, str]:
-    """Find the OCS-CI per-test log file URL by searching ocs-ci-logs-* directories.
-
-    Args:
-        logs_url_root: Magna base URL for the launch (contains ``logs/``).
-        test_name: Raw test name (will be normalized internally).
-        api_key: Bearer token for Magna.
-
-    Returns:
-        Tuple of (log_file_url, ocs_ci_dir_name).
+        Tuple of (log_file_url, log_filename).
 
     Raises:
-        ValueError: If no ``ocs-ci-logs`` directories exist, the test is
-            not found, or multiple tests match ambiguously.
+        ValueError: If no deploy log file is found.
     """
-    normalized = _normalize_test_name(test_name)
     logs_page = f"{logs_url_root.rstrip('/')}/logs/"
-
     lines = _fetch_html_lines(logs_page, api_key)
     hrefs = _extract_hrefs(lines)
-    ocs_ci_dirs = [h for h in hrefs if h.startswith("ocs-ci-logs")]
 
-    if not ocs_ci_dirs:
-        available = [h for h in hrefs if h.endswith("/") and not h.startswith("?") and not h.startswith("/")]
-        raise ValueError(f"No ocs-ci-logs directories found in the Magna logs page. Available entries: {available}")
+    candidates = [h for h in hrefs if h.startswith(_DEPLOY_LOG_PREFIX) and h.endswith(".log")]
 
-    all_matches: list[tuple[str, str]] = []
-
-    def _search_dir(ocs_ci_dir: str) -> list[tuple[str, str]]:
-        tests_url = f"{logs_page}{ocs_ci_dir}tests/"
-        try:
-            found = _recursive_search(tests_url, normalized, api_key)
-        except requests.HTTPError:
-            return []
-        results = []
-        for match_url in found:
-            log_url = f"{match_url.rstrip('/')}/logs"
-            results.append((log_url, ocs_ci_dir.rstrip("/")))
-        return results
-
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = {pool.submit(_search_dir, d): d for d in ocs_ci_dirs}
-        for future in as_completed(futures):
-            all_matches.extend(future.result())
-
-    if not all_matches:
+    if not candidates:
+        available = [h for h in hrefs if h.endswith(".log")]
         raise ValueError(
-            f"Test '{test_name}' (normalized: '{normalized}') not found in any "
-            f"ocs-ci-logs directory. Searched: {[d.rstrip('/') for d in ocs_ci_dirs]}"
+            f"No deploy log file (starting with '{_DEPLOY_LOG_PREFIX}') found. Available .log files: {available}"
         )
 
-    if len(all_matches) > 1:
-        paths = [m[0] for m in all_matches]
-        raise ValueError(f"Multiple matches found for '{test_name}'. Please be more specific.\nMatches: {paths}")
+    if len(candidates) == 1:
+        filename = candidates[0]
+    else:
+        size_map: dict[str, float] = {}
+        for line in lines:
+            for c in candidates:
+                if c in line:
+                    m = re.search(r"<td[^>]*>\s*([\d.]+)([KMG])\s*</td>", line)
+                    if m:
+                        val = float(m.group(1))
+                        unit = m.group(2)
+                        if unit == "K":
+                            val *= 1024
+                        elif unit == "M":
+                            val *= 1024 * 1024
+                        elif unit == "G":
+                            val *= 1024 * 1024 * 1024
+                        size_map[c] = val
+        if size_map:
+            filename = max(size_map, key=size_map.get)
+        else:
+            filename = candidates[0]
 
-    return all_matches[0]
+    return f"{logs_page}{filename}", filename
 
 
-def _fetch_and_filter_log(
+def _extract_test_section(lines: list[str], test_name: str) -> list[str]:
+    """Extract lines belonging to a specific test from the full deploy log.
+
+    Finds all sections where ``test_name`` appears in a pytest test header
+    (a line containing the test nodeid followed by a "live log setup" line).
+    Each section runs from the header line up to (but not including) the
+    next test header.
+
+    Args:
+        lines: All lines from the deploy log.
+        test_name: Test name to search for (substring match against nodeid).
+
+    Returns:
+        Extracted lines for the test (may include multiple sections separated
+        by a marker line).
+
+    Raises:
+        ValueError: If the test is not found in the log.
+    """
+    sections: list[tuple[int, int]] = []
+
+    for i in range(len(lines) - 1):
+        clean = _strip_ansi(lines[i])
+        if test_name not in clean:
+            continue
+        if not _is_test_header(lines[i], lines[i + 1]):
+            continue
+
+        start = i
+        end = len(lines)
+        for j in range(i + 2, len(lines) - 1):
+            if _is_test_header(lines[j], lines[j + 1]):
+                end = j
+                break
+        sections.append((start, end))
+
+    if not sections:
+        raise ValueError(
+            f"Test '{test_name}' not found in the deploy log. "
+            "Make sure the test name matches (substring of the pytest nodeid)."
+        )
+
+    result: list[str] = []
+    for idx, (start, end) in enumerate(sections):
+        if idx > 0:
+            result.append(f"{'=' * 60} section {idx + 1} {'=' * 60}")
+        result.extend(_strip_ansi(line) for line in lines[start:end])
+
+    return result
+
+
+def _fetch_and_extract_test(
     log_url: str,
     api_key: str,
-    exclude_debug: bool = True,
+    test_name: str,
     tail: int = 0,
     head: int = 0,
 ) -> tuple[str, dict]:
-    """Fetch a log file from Magna and apply filtering.
+    """Fetch the deploy log and extract a specific test's section.
 
     Args:
-        log_url: URL to the per-test logs file.
+        log_url: URL to the deploy log file.
         api_key: Bearer token for Magna.
-        exclude_debug: If True, filter out DEBUG-level lines.
+        test_name: Test name to extract (substring match).
         tail: Keep only the last N lines (0 = all).
         head: Keep only the first N lines (0 = all).
 
@@ -142,7 +156,7 @@ def _fetch_and_filter_log(
         Tuple of (filtered_content, metadata_dict).
 
     Raises:
-        ValueError: If both head and tail are non-zero.
+        ValueError: If both head and tail are non-zero, or test not found.
     """
     if head > 0 and tail > 0:
         raise ValueError(
@@ -158,26 +172,23 @@ def _fetch_and_filter_log(
     raw_lines = resp.text.splitlines()
     total_lines_raw = len(raw_lines)
 
-    if exclude_debug:
-        filtered_lines = [line for line in raw_lines if "- DEBUG -" not in line]
-    else:
-        filtered_lines = raw_lines
-    total_lines_after_filter = len(filtered_lines)
+    extracted = _extract_test_section(raw_lines, test_name)
+    total_lines_extracted = len(extracted)
 
     if head > 0:
-        filtered_lines = filtered_lines[:head]
+        extracted = extracted[:head]
     elif tail > 0:
-        filtered_lines = filtered_lines[-tail:]
+        extracted = extracted[-tail:]
 
-    content = "\n".join(filtered_lines)
-    if filtered_lines:
+    content = "\n".join(extracted)
+    if extracted:
         content += "\n"
 
     content, truncated = truncate_log_from_tail(content, max_size=MAX_LOG_SIZE)
 
     meta = {
-        "total_lines_raw": total_lines_raw,
-        "total_lines_after_filter": total_lines_after_filter,
+        "total_lines_deploy_log": total_lines_raw,
+        "total_lines_extracted": total_lines_extracted,
         "lines_returned": len(content.splitlines()),
         "truncated": truncated,
     }
@@ -187,41 +198,28 @@ def _fetch_and_filter_log(
 def get_ocs_ci_test_log(
     reportportal_url: str,
     test_name: str,
-    exclude_debug: bool = True,
     tail: int = 0,
     head: int = 0,
 ) -> str:
-    """Retrieve the OCS-CI per-test log from a ReportPortal launch.
+    """Retrieve OCS-CI test log from a ReportPortal launch.
 
     Given a ReportPortal URL and test name, resolves the Magna logs
-    directory, finds the ``ocs-ci-logs`` per-test log file, downloads it,
-    and returns its content with optional filtering.
+    directory, finds the deploy log file, downloads it, and extracts
+    the section for the requested test.
 
-    The per-test log contains DEBUG-level output including full YAML dumps
-    from ``oc`` commands. By default, DEBUG lines are filtered out to save
-    tokens. Set ``exclude_debug=False`` when you need to examine:
-
-    - Full ``oc get`` command output (Pod specs, StorageCluster YAML, PVC
-      details)
-    - Resource configuration verification (what was actually applied vs
-      expected)
-    - Command return codes and raw stdout/stderr content
-    - Ceph internal status dumps and OSD diagnostics
-
-    DEBUG logs are large (often 60+ MB) because they include full YAML
-    dumps from every ``oc`` command. With filtering on (default), only
-    INFO, WARNING, ERROR, and custom OCS-CI levels (TEST_STEP, ASSERTION)
-    are returned.
+    The deploy log contains the full pytest output for all tests in the
+    run. This function finds the test by matching ``test_name`` as a
+    substring of the pytest nodeid in the log, then extracts everything
+    from the test header through to the next test header (or end of file).
 
     Args:
         reportportal_url: Full ReportPortal URL to a test log page
             (must contain '/launches/' and '/log').
         test_name: Test function name, e.g.
             ``'test_bucket_notifications[default-logs-pvc]'``.
-            Supports partial/substring matching against directory names.
-        exclude_debug: Filter out DEBUG-level log lines (default True).
-        tail: Return only the last N lines after filtering (0 = all).
-        head: Return only the first N lines after filtering (0 = all).
+            Matched as a substring against pytest nodeids in the log.
+        tail: Return only the last N lines after extraction (0 = all).
+        head: Return only the first N lines after extraction (0 = all).
 
     Returns:
         JSON string with test log content and metadata.
@@ -232,18 +230,17 @@ def get_ocs_ci_test_log(
 
         meta = _resolve_magna_metadata(launch_id, test_item_id, api_key, base_url)
 
-        log_url, ocs_ci_dir = _find_test_log_url(meta["logs_url_root"], test_name, api_key)
+        log_url, deploy_log = _find_deploy_log_url(meta["logs_url_root"], api_key)
 
-        content, log_meta = _fetch_and_filter_log(log_url, api_key, exclude_debug, tail, head)
+        content, log_meta = _fetch_and_extract_test(log_url, api_key, test_name, tail, head)
 
         return json.dumps(
             {
                 "test_name": test_name,
                 "log_url": log_url,
-                "ocs_ci_dir": ocs_ci_dir,
-                "exclude_debug": exclude_debug,
-                "total_lines_raw": log_meta["total_lines_raw"],
-                "total_lines_after_filter": log_meta["total_lines_after_filter"],
+                "deploy_log": deploy_log,
+                "total_lines_deploy_log": log_meta["total_lines_deploy_log"],
+                "total_lines_extracted": log_meta["total_lines_extracted"],
                 "lines_returned": log_meta["lines_returned"],
                 "truncated": log_meta["truncated"],
                 "content": content,
