@@ -23,8 +23,11 @@ test = [
 [project.scripts]
 must-gather-downloader = "must_gather_downloader.server:main"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.setuptools]
+packages = ["must_gather_downloader"]
+
+[tool.setuptools.package-dir]
+must_gather_downloader = "src"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
