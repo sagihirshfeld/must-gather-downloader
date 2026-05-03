@@ -4,6 +4,7 @@ from .cache import list_must_gather_cache as _list_cache_impl
 from .download import download_must_gather as _download_impl
 from .noobaa import get_noobaa_resource as _get_noobaa_impl
 from .pod_logs import get_must_gather_pod_logs as _pod_logs_impl
+from .pod_logs import search_pod_logs as _search_pod_logs_impl
 from .resources import get_must_gather_resource as _get_resource_impl
 from .resources import list_must_gather_contents as _list_contents_impl
 from .search import search_must_gather as _search_impl
@@ -196,6 +197,51 @@ def get_must_gather_pod_logs(
     return _pod_logs_impl(
         must_gather_path, namespace, pod_name, container,
         previous, tail, time_from, time_to,
+    )
+
+
+@mcp.tool
+def search_pod_logs(
+    must_gather_path: str,
+    namespace: str,
+    pod_name: str,
+    pattern: str,
+    container: str = "",
+    previous: bool = False,
+    context_lines: int = 3,
+    max_results: int = 50,
+    case_sensitive: bool = False,
+    time_from: str = "",
+    time_to: str = "",
+) -> str:
+    """Search within pod log files and return matching lines with context.
+
+    Targeted search that combines pod-log file discovery with pattern matching.
+    Returns only matching lines with surrounding context instead of full log
+    content. Fills the gap between get_must_gather_pod_logs (full log) and
+    search_must_gather (all files).
+
+    Args:
+        must_gather_path: Path to the extracted must-gather directory
+        namespace: Kubernetes namespace to look in
+        pod_name: Pod name or substring to match
+        pattern: Regex or literal string to search for
+        container: Container name filter (empty = all containers)
+        previous: If True, search previous.log instead of current.log
+        context_lines: Lines of context before and after each match (default 3)
+        max_results: Maximum matches to return (default 50)
+        case_sensitive: If False (default), search is case-insensitive
+        time_from: Start time filter, e.g. "03:38:00" or "2025-01-15T03:38:00"
+        time_to: End time filter, e.g. "03:41:00" or "2025-01-15T03:41:00"
+
+    Returns:
+        JSON string with matches list, each containing line_number, line,
+        context_before, context_after, pod, container, and log_file
+    """
+    return _search_pod_logs_impl(
+        must_gather_path, namespace, pod_name, pattern,
+        container, previous, context_lines, max_results,
+        case_sensitive, time_from, time_to,
     )
 
 
