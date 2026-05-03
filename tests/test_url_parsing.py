@@ -15,9 +15,7 @@ class TestExtractIds:
 
     def test_missing_log(self):
         with pytest.raises(ValueError, match="Invalid ReportPortal URL"):
-            _extract_ids(
-                "https://rp.example.com/ui/#ocs/launches/all/12345/item/67890"
-            )
+            _extract_ids("https://rp.example.com/ui/#ocs/launches/all/12345/item/67890")
 
     def test_truncated_path(self):
         with pytest.raises(ValueError, match="Could not extract launch ID"):

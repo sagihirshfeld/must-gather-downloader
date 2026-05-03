@@ -12,9 +12,7 @@ mcp = FastMCP("must-gather")
 
 
 @mcp.tool
-def download_must_gather(
-    reportportal_url: str, force_redownload: bool = False
-) -> str:
+def download_must_gather(reportportal_url: str, force_redownload: bool = False) -> str:
     """Download and extract must-gather logs from a ReportPortal test failure.
 
     Given a ReportPortal test log page URL, this tool:
@@ -194,8 +192,14 @@ def get_must_gather_pod_logs(
         JSON string with available pods list, or pod log contents
     """
     return _pod_logs_impl(
-        must_gather_path, namespace, pod_name, container,
-        previous, tail, time_from, time_to,
+        must_gather_path,
+        namespace,
+        pod_name,
+        container,
+        previous,
+        tail,
+        time_from,
+        time_to,
     )
 
 

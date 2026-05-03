@@ -11,7 +11,7 @@ import requests
 
 from .cache import _cache_check
 from .config import RP_PROJECT, _get_config, _ssl_verify
-from .navigate import _count_files_and_size
+from .navigate import _count_files, _count_files_and_size
 from .reportportal import (
     _extract_hrefs,
     _extract_ids,
@@ -21,9 +21,7 @@ from .reportportal import (
 )
 
 
-def _resolve_test_log_directory(
-    launch_id: str, test_item_id: str, api_key: str, base_url: str
-) -> dict:
+def _resolve_test_log_directory(launch_id: str, test_item_id: str, api_key: str, base_url: str) -> dict:
     """Resolve the Magna logs directory for a ReportPortal test failure.
 
     Calls the RP API to get the launch description (Magna logs URL) and
@@ -61,8 +59,7 @@ def _resolve_test_log_directory(
         test_name = item_json["name"]
     except (KeyError, IndexError) as e:
         raise ValueError(
-            "Could not extract Magna logs location from ReportPortal. "
-            f"Missing description or name field: {e}"
+            f"Could not extract Magna logs location from ReportPortal. Missing description or name field: {e}"
         )
 
     lines = _fetch_html_lines(logs_url_root, api_key)
@@ -92,10 +89,7 @@ def _resolve_test_log_directory(
                 break
 
     if not target_suffix:
-        raise ValueError(
-            "Test exists in ReportPortal but not found in any "
-            "failed_testcase directory on Magna."
-        )
+        raise ValueError("Test exists in ReportPortal but not found in any failed_testcase directory on Magna.")
 
     return {
         "logs_url_root": logs_url_root,
@@ -125,24 +119,21 @@ def _find_tarball_url(info: dict, api_key: str) -> str:
     Raises:
         ValueError: If no tarball is found in the expected directory.
     """
-    cluster_dir = "/".join([
-        info["logs_url_root"].rstrip("/"),
-        info["target_suffix"].rstrip("/"),
-        info["safe_test_name"],
-        info["cluster_name"],
-    ])
+    cluster_dir = "/".join(
+        [
+            info["logs_url_root"].rstrip("/"),
+            info["target_suffix"].rstrip("/"),
+            info["safe_test_name"],
+            info["cluster_name"],
+        ]
+    )
 
     lines = _fetch_html_lines(cluster_dir, api_key)
     hrefs = _extract_hrefs(lines)
-    tarball_hrefs = [
-        h for h in hrefs
-        if h.endswith(".tar.gz") or h.endswith(".tgz") or h.endswith(".tar")
-    ]
+    tarball_hrefs = [h for h in hrefs if h.endswith(".tar.gz") or h.endswith(".tgz") or h.endswith(".tar")]
 
     if not tarball_hrefs:
-        raise ValueError(
-            "No must-gather tarball found in the expected location on Magna."
-        )
+        raise ValueError("No must-gather tarball found in the expected location on Magna.")
 
     preferred = next(
         (h for h in tarball_hrefs if "must_gather" in h or "must-gather" in h),
@@ -172,9 +163,7 @@ def _extract_tarball(tarball_path: Path, extract_dir: Path) -> None:
         tar.extractall(path=extract_dir, filter="data")
 
 
-def download_must_gather(
-    reportportal_url: str, force_redownload: bool = False
-) -> str:
+def download_must_gather(reportportal_url: str, force_redownload: bool = False) -> str:
     """Download, cache, and extract a must-gather tarball from ReportPortal.
 
     Orchestrates the full pipeline: URL parsing, cache lookup (with file
@@ -199,14 +188,16 @@ def download_must_gather(
         metadata = _cache_check(cache_entry)
         if metadata:
             extracted = cache_entry / "extracted"
-            return json.dumps({
-                "path": str(extracted),
-                "test_name": metadata["test_name"],
-                "cluster_name": metadata["cluster_name"],
-                "tarball_url": metadata["tarball_url"],
-                "cached": True,
-                "files_count": metadata.get("files_count") or _count_files(extracted),
-            })
+            return json.dumps(
+                {
+                    "path": str(extracted),
+                    "test_name": metadata["test_name"],
+                    "cluster_name": metadata["cluster_name"],
+                    "tarball_url": metadata["tarball_url"],
+                    "cached": True,
+                    "files_count": metadata.get("files_count") or _count_files(extracted),
+                }
+            )
 
     lock_path = cache_entry / ".lock"
     with open(lock_path, "w") as lock_fd:
@@ -216,14 +207,16 @@ def download_must_gather(
                 metadata = _cache_check(cache_entry)
                 if metadata:
                     extracted = cache_entry / "extracted"
-                    return json.dumps({
-                        "path": str(extracted),
-                        "test_name": metadata["test_name"],
-                        "cluster_name": metadata["cluster_name"],
-                        "tarball_url": metadata["tarball_url"],
-                        "cached": True,
-                        "files_count": metadata.get("files_count") or _count_files(extracted),
-                    })
+                    return json.dumps(
+                        {
+                            "path": str(extracted),
+                            "test_name": metadata["test_name"],
+                            "cluster_name": metadata["cluster_name"],
+                            "tarball_url": metadata["tarball_url"],
+                            "cached": True,
+                            "files_count": metadata.get("files_count") or _count_files(extracted),
+                        }
+                    )
 
             extracted_dir = cache_entry / "extracted"
             if force_redownload and extracted_dir.exists():
@@ -253,13 +246,15 @@ def download_must_gather(
             with open(cache_entry / "metadata.json", "w") as f:
                 json.dump(metadata, f, indent=2)
 
-            return json.dumps({
-                "path": str(extracted_dir),
-                "test_name": info["test_name"],
-                "cluster_name": info["cluster_name"],
-                "tarball_url": tarball_url,
-                "cached": False,
-                "files_count": files_count,
-            })
+            return json.dumps(
+                {
+                    "path": str(extracted_dir),
+                    "test_name": info["test_name"],
+                    "cluster_name": info["cluster_name"],
+                    "tarball_url": tarball_url,
+                    "cached": False,
+                    "files_count": files_count,
+                }
+            )
         finally:
             fcntl.flock(lock_fd, fcntl.LOCK_UN)

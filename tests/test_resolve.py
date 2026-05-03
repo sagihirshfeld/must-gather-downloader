@@ -7,14 +7,7 @@ from must_gather_downloader.download import _find_tarball_url, _resolve_test_log
 MODULE = "must_gather_downloader.download"
 
 LAUNCH_JSON = {
-    "content": [
-        {
-            "description": (
-                "Build #42\n"
-                "Logs URL: https://magna.example.com/openshift-clusters/test-cluster-1/"
-            )
-        }
-    ]
+    "content": [{"description": ("Build #42\nLogs URL: https://magna.example.com/openshift-clusters/test-cluster-1/")}]
 }
 ITEM_JSON = {"name": "test_my_feature"}
 
@@ -33,9 +26,7 @@ class TestResolveTestLogDirectory:
         mock_fetch_json.side_effect = [LAUNCH_JSON, ITEM_JSON]
         mock_fetch_html.side_effect = [ROOT_DIR_HTML_LINES, MATCH_HTML_LINES]
 
-        result = _resolve_test_log_directory(
-            "12345", "67890", "key", "https://rp.example.com"
-        )
+        result = _resolve_test_log_directory("12345", "67890", "key", "https://rp.example.com")
         assert result["cluster_name"] == "test-cluster-1"
         assert result["test_name"] == "test_my_feature"
         assert result["launch_id"] == "12345"
@@ -50,9 +41,7 @@ class TestResolveTestLogDirectory:
         mock_fetch_html.return_value = ['<a href="some_other_dir/">other</a>']
 
         with pytest.raises(ValueError, match="No failed_testcase"):
-            _resolve_test_log_directory(
-                "12345", "67890", "key", "https://rp.example.com"
-            )
+            _resolve_test_log_directory("12345", "67890", "key", "https://rp.example.com")
 
     @patch(f"{MODULE}._fetch_html_lines")
     @patch(f"{MODULE}._fetch_json")
@@ -61,9 +50,7 @@ class TestResolveTestLogDirectory:
         mock_fetch_html.side_effect = [ROOT_DIR_HTML_LINES, NO_MATCH_HTML_LINES, NO_MATCH_HTML_LINES]
 
         with pytest.raises(ValueError, match="not found in any"):
-            _resolve_test_log_directory(
-                "12345", "67890", "key", "https://rp.example.com"
-            )
+            _resolve_test_log_directory("12345", "67890", "key", "https://rp.example.com")
 
     @patch(f"{MODULE}._fetch_html_lines")
     @patch(f"{MODULE}._fetch_json")
@@ -72,9 +59,7 @@ class TestResolveTestLogDirectory:
         mock_fetch_json.side_effect = [bad_launch, ITEM_JSON]
 
         with pytest.raises(ValueError, match="Could not extract"):
-            _resolve_test_log_directory(
-                "12345", "67890", "key", "https://rp.example.com"
-            )
+            _resolve_test_log_directory("12345", "67890", "key", "https://rp.example.com")
 
     @patch(f"{MODULE}._fetch_html_lines")
     @patch(f"{MODULE}._fetch_json")
@@ -86,9 +71,7 @@ class TestResolveTestLogDirectory:
             MATCH_HTML_LINES,
         ]
 
-        result = _resolve_test_log_directory(
-            "12345", "67890", "key", "https://rp.example.com"
-        )
+        result = _resolve_test_log_directory("12345", "67890", "key", "https://rp.example.com")
         assert result["test_name"] == "test_my_feature"
 
 

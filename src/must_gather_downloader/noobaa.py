@@ -77,24 +77,25 @@ def get_noobaa_resource(
         extract_dir = _ensure_noobaa_diagnostics_extracted(noobaa_dir)
         if extract_dir is None:
             return json.dumps({"error": "No noobaa_diagnostics tarball found in noobaa/raw_output/"})
-        available = sorted(
-            str(f.relative_to(extract_dir))
-            for f in extract_dir.rglob("*") if f.is_file()
-        )
+        available = sorted(str(f.relative_to(extract_dir)) for f in extract_dir.rglob("*") if f.is_file())
         if not name:
-            return json.dumps({
-                "resource_type": "diagnostics",
-                "available_files": available,
-                "hint": "Specify name parameter to read a specific file",
-            })
+            return json.dumps(
+                {
+                    "resource_type": "diagnostics",
+                    "available_files": available,
+                    "hint": "Specify name parameter to read a specific file",
+                }
+            )
         target = (extract_dir / name).resolve()
         if not target.is_relative_to(extract_dir.resolve()):
             return json.dumps({"error": "Invalid path: escapes diagnostics directory"})
         if not target.is_file():
-            return json.dumps({
-                "error": f"File not found in diagnostics: '{name}'",
-                "available_files": available,
-            })
+            return json.dumps(
+                {
+                    "error": f"File not found in diagnostics: '{name}'",
+                    "available_files": available,
+                }
+            )
         content = target.read_text(encoding="utf-8", errors="replace")
         result = {
             "resource_type": "diagnostics",
@@ -114,19 +115,23 @@ def get_noobaa_resource(
             return json.dumps({"error": "No noobaa/logs/openshift-storage/ directory found"})
         available = sorted(f.name for f in logs_dir.iterdir() if f.is_file())
         if not name:
-            return json.dumps({
-                "resource_type": "logs",
-                "available_logs": available,
-                "hint": "Specify name parameter to read a specific log file",
-            })
+            return json.dumps(
+                {
+                    "resource_type": "logs",
+                    "available_logs": available,
+                    "hint": "Specify name parameter to read a specific log file",
+                }
+            )
         target = (logs_dir / name).resolve()
         if not target.is_relative_to(logs_dir.resolve()):
             return json.dumps({"error": "Invalid path: escapes logs directory"})
         if not target.is_file():
-            return json.dumps({
-                "error": f"Log file not found: '{name}'",
-                "available_logs": available,
-            })
+            return json.dumps(
+                {
+                    "error": f"Log file not found: '{name}'",
+                    "available_logs": available,
+                }
+            )
         content = target.read_text(encoding="utf-8", errors="replace")
         truncated = False
         if tail > 0:
@@ -163,19 +168,23 @@ def get_noobaa_resource(
             return json.dumps({"error": "No noobaa/cnpg_info/ directory found"})
         available = sorted(f.name for f in cnpg_dir.iterdir() if f.is_file())
         if not name:
-            return json.dumps({
-                "resource_type": "cnpg",
-                "available_files": available,
-                "hint": "Specify name parameter to read a specific CNPG info file",
-            })
+            return json.dumps(
+                {
+                    "resource_type": "cnpg",
+                    "available_files": available,
+                    "hint": "Specify name parameter to read a specific CNPG info file",
+                }
+            )
         target = (cnpg_dir / name).resolve()
         if not target.is_relative_to(cnpg_dir.resolve()):
             return json.dumps({"error": "Invalid path: escapes cnpg directory"})
         if not target.is_file():
-            return json.dumps({
-                "error": f"CNPG info file not found: '{name}'",
-                "available_files": available,
-            })
+            return json.dumps(
+                {
+                    "error": f"CNPG info file not found: '{name}'",
+                    "available_files": available,
+                }
+            )
         content = target.read_text(encoding="utf-8", errors="replace")
         result = {
             "resource_type": "cnpg",
@@ -211,22 +220,26 @@ def get_noobaa_resource(
                 result["total_size_bytes"] = resource_file.stat().st_size
             return json.dumps(result)
         available = sorted(f.stem for f in resource_dir.iterdir() if f.suffix == ".yaml")
-        return json.dumps({
-            "resource_type": rt,
-            "available_names": available,
-            "hint": f"Specify a name parameter to retrieve a specific {rt}",
-        })
+        return json.dumps(
+            {
+                "resource_type": rt,
+                "available_names": available,
+                "hint": f"Specify a name parameter to retrieve a specific {rt}",
+            }
+        )
 
     if rt in _NOOBAA_NAMESPACED:
         namespaces_dir = noobaa_dir / "namespaces"
         if not namespace:
-            available_ns = sorted(
-                d.name for d in namespaces_dir.iterdir() if d.is_dir()
-            ) if namespaces_dir.is_dir() else []
-            return json.dumps({
-                "error": f"namespace is required for resource_type '{rt}'",
-                "available_namespaces": available_ns,
-            })
+            available_ns = (
+                sorted(d.name for d in namespaces_dir.iterdir() if d.is_dir()) if namespaces_dir.is_dir() else []
+            )
+            return json.dumps(
+                {
+                    "error": f"namespace is required for resource_type '{rt}'",
+                    "available_namespaces": available_ns,
+                }
+            )
         api_group, resource_path = _NOOBAA_NAMESPACED[rt]
         resource_dir = namespaces_dir / namespace / api_group / resource_path
         if not resource_dir.is_dir():
@@ -250,14 +263,18 @@ def get_noobaa_resource(
                 result["total_size_bytes"] = resource_file.stat().st_size
             return json.dumps(result)
         available = sorted(f.stem for f in resource_dir.iterdir() if f.suffix == ".yaml")
-        return json.dumps({
-            "resource_type": rt,
-            "namespace": namespace,
-            "available_names": available,
-            "hint": f"Specify a name parameter to retrieve a specific {rt}",
-        })
+        return json.dumps(
+            {
+                "resource_type": rt,
+                "namespace": namespace,
+                "available_names": available,
+                "hint": f"Specify a name parameter to retrieve a specific {rt}",
+            }
+        )
 
-    return json.dumps({
-        "error": f"Unknown noobaa resource_type '{resource_type}'",
-        "supported_types": _ALL_NOOBAA_TYPES,
-    })
+    return json.dumps(
+        {
+            "error": f"Unknown noobaa resource_type '{resource_type}'",
+            "supported_types": _ALL_NOOBAA_TYPES,
+        }
+    )

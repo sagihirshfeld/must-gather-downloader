@@ -63,11 +63,13 @@ def search_must_gather(
             with open(filepath, encoding="utf-8", errors="replace") as fh:
                 for line_number, line in enumerate(fh, start=1):
                     if compiled.search(line[:_MAX_LINE_LENGTH]):
-                        matches.append({
-                            "file": str(filepath.relative_to(root)),
-                            "line_number": line_number,
-                            "line": line.strip()[:_MAX_LINE_LENGTH],
-                        })
+                        matches.append(
+                            {
+                                "file": str(filepath.relative_to(root)),
+                                "line_number": line_number,
+                                "line": line.strip()[:_MAX_LINE_LENGTH],
+                            }
+                        )
                         if len(matches) >= max_results:
                             truncated = True
                             break
@@ -76,12 +78,14 @@ def search_must_gather(
         if truncated:
             break
 
-    return json.dumps({
-        "pattern": pattern,
-        "file_pattern": file_pattern,
-        "case_sensitive": case_sensitive,
-        "matches": matches,
-        "total_matches": len(matches),
-        "files_searched": files_searched,
-        "truncated": truncated,
-    })
+    return json.dumps(
+        {
+            "pattern": pattern,
+            "file_pattern": file_pattern,
+            "case_sensitive": case_sensitive,
+            "matches": matches,
+            "total_matches": len(matches),
+            "files_searched": files_searched,
+            "truncated": truncated,
+        }
+    )
