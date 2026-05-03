@@ -31,14 +31,16 @@ def _is_test_header(line: str, next_line: str) -> bool:
 
 
 def _find_deploy_log_url(logs_url_root: str, api_key: str) -> tuple[str, str]:
-    """Find the deploy log file URL from the Magna logs directory.
+    """Find the deploy log file URL from the Magna logs root directory.
 
-    Looks for files starting with ``deploy-ocs-cluster-build`` and ending
-    in ``.log``. If multiple exist, picks the largest by parsing sizes
-    from the Apache directory listing HTML.
+    Scans ``logs_url_root`` directly for files starting with
+    ``deploy-ocs-cluster-build`` and ending in ``.log``.  If multiple
+    exist, picks the largest by parsing sizes from the Apache directory
+    listing HTML.
 
     Args:
-        logs_url_root: Magna base URL for the launch.
+        logs_url_root: Magna logs root URL (deploy logs live here
+            alongside ``failed_testcase`` directories).
         api_key: Bearer token for Magna.
 
     Returns:
@@ -47,7 +49,7 @@ def _find_deploy_log_url(logs_url_root: str, api_key: str) -> tuple[str, str]:
     Raises:
         ValueError: If no deploy log file is found.
     """
-    logs_page = f"{logs_url_root.rstrip('/')}/logs/"
+    logs_page = f"{logs_url_root.rstrip('/')}/"
     lines = _fetch_html_lines(logs_page, api_key)
     hrefs = _extract_hrefs(lines)
 
