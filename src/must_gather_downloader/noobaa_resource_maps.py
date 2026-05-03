@@ -1,3 +1,5 @@
+"""Mapping constants for NooBaa-specific resource types, aliases, and directory paths."""
+
 _NOOBAA_NAMESPACED = {
     "objectbucketclaim": ("objectbucket.io", "objectbucketclaims"),
     "backingstore": ("noobaa.io", "backingstores"),

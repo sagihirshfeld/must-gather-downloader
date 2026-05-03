@@ -8,6 +8,12 @@ RP_PROJECT = "ocs"
 
 
 def _ssl_verify() -> bool | str:
+    """Return the SSL verification setting from the RP_SSL_VERIFY env var.
+
+    Returns:
+        False if verification is disabled, True for default verification,
+        or a file path string pointing to a custom CA bundle.
+    """
     val = os.environ.get("RP_SSL_VERIFY", "true").strip().lower()
     if val == "false":
         logger.warning("SSL verification is disabled (RP_SSL_VERIFY=false). Connections are vulnerable to MITM attacks.")
@@ -18,6 +24,14 @@ def _ssl_verify() -> bool | str:
 
 
 def _get_config():
+    """Read configuration from environment variables.
+
+    Returns:
+        Tuple of (api_key, base_url, cache_dir) where cache_dir is a Path.
+
+    Raises:
+        ValueError: If RP_API_KEY or RP_BASE_URL are not set.
+    """
     api_key = os.environ.get("RP_API_KEY", "")
     base_url = os.environ.get("RP_BASE_URL", "").strip().strip("\"'").rstrip("/")
     cache_dir = Path(

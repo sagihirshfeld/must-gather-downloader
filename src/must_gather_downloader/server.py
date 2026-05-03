@@ -200,6 +200,7 @@ def get_must_gather_pod_logs(
 
 
 def main():
+    """Run the MCP server."""
     mcp.run()
 
 

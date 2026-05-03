@@ -13,6 +13,23 @@ def search_must_gather(
     max_results: int = 50,
     case_sensitive: bool = False,
 ) -> str:
+    """Search text files in a must-gather for lines matching a pattern.
+
+    Binary files are auto-detected and skipped. Invalid regex patterns
+    are treated as literal strings. Very long lines are capped at
+    ``_MAX_LINE_LENGTH`` characters.
+
+    Args:
+        must_gather_path: Path to the must-gather extraction.
+        pattern: Regex or literal string to search for.
+        file_pattern: Optional glob to restrict which files are searched.
+        max_results: Maximum number of matches to return.
+        case_sensitive: If False (default), search is case-insensitive.
+
+    Returns:
+        JSON string with matches list, files_searched count, and
+        truncated flag.
+    """
     if not pattern:
         return json.dumps({"error": "pattern parameter is required"})
 

@@ -1,3 +1,5 @@
+"""Mapping constants for must-gather resource types, aliases, and directory paths."""
+
 _RESOURCE_ALIASES = {
     "pv": "persistentvolume",
     "sc": "storageclass",

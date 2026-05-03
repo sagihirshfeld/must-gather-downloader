@@ -22,6 +22,24 @@ def get_noobaa_resource(
     namespace: str = "",
     tail: int = 0,
 ) -> str:
+    """Retrieve a NooBaa-specific resource from the must-gather.
+
+    Handles status, db_list, diagnostics, logs, CNPG info, and
+    NooBaa CRD resources (both cluster-scoped and namespaced).
+    Path traversal is prevented for all file-based lookups.
+
+    Args:
+        must_gather_path: Path to the must-gather extraction.
+        resource_type: NooBaa resource type or alias (e.g. "status",
+            "diagnostics", "logs", "cnpg", "obc", "bs").
+        name: Specific file or resource name. Omit to list available.
+        namespace: Required for namespaced CRD resources.
+        tail: For logs, keep only the last N lines (0 = all).
+
+    Returns:
+        JSON string with resource content, or a listing of available
+        items if *name* is omitted.
+    """
     root = _find_must_gather_root(must_gather_path)
     try:
         noobaa_dir = _find_noobaa_dir(root)

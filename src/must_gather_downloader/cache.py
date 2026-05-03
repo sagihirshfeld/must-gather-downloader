@@ -5,6 +5,17 @@ from .config import _get_config
 
 
 def _cache_check(cache_entry: Path) -> dict | None:
+    """Validate a cache entry and return its metadata if valid.
+
+    A cache entry is valid when both ``metadata.json`` and the
+    ``extracted/`` directory exist and the metadata file is parseable.
+
+    Args:
+        cache_entry: Path to a cache entry directory (keyed by test item ID).
+
+    Returns:
+        Parsed metadata dict, or None if the entry is missing or corrupt.
+    """
     metadata_path = cache_entry / "metadata.json"
     extracted_dir = cache_entry / "extracted"
     if metadata_path.exists() and extracted_dir.exists():
@@ -17,6 +28,13 @@ def _cache_check(cache_entry: Path) -> dict | None:
 
 
 def list_must_gather_cache() -> str:
+    """List all cached must-gather extractions with metadata and sizes.
+
+    Returns:
+        JSON string with ``entries`` list and ``cache_dir`` path.
+        Each entry includes test_item_id, test_name, cluster_name,
+        path, downloaded_at, and size_mb.
+    """
     _, _, cache_dir = _get_config()
 
     entries = []

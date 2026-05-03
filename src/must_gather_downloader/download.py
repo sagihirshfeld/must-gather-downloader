@@ -24,6 +24,26 @@ from .reportportal import (
 def _resolve_test_log_directory(
     launch_id: str, test_item_id: str, api_key: str, base_url: str
 ) -> dict:
+    """Resolve the Magna logs directory for a ReportPortal test failure.
+
+    Calls the RP API to get the launch description (Magna logs URL) and
+    test name, then crawls Magna directory listings to locate the
+    ``failed_testcase`` directory that contains this test.
+
+    Args:
+        launch_id: ReportPortal launch ID.
+        test_item_id: ReportPortal test item ID.
+        api_key: Bearer token for RP and Magna.
+        base_url: ReportPortal base URL (without trailing slash).
+
+    Returns:
+        Dict with keys: logs_url_root, cluster_name, test_name,
+        target_suffix, safe_test_name, launch_id, test_item_id.
+
+    Raises:
+        ValueError: If metadata cannot be extracted or the test is not
+            found in any failed_testcase directory.
+    """
     rp_api = f"{base_url}/api/v1/{RP_PROJECT}"
     launch_api = f"{rp_api}/launch?filter.eq.id={launch_id}"
     item_api = f"{rp_api}/item/{test_item_id}"
@@ -53,6 +73,7 @@ def _resolve_test_log_directory(
         raise ValueError("No failed_testcase directories found on Magna.")
 
     def _check_suffix(suffix):
+        """Check if the test name appears in the given failed_testcase directory."""
         dir_url = f"{logs_url_root.rstrip('/')}/{suffix}"
         dir_lines = _fetch_html_lines(dir_url, api_key)
         if any(test_name in line for line in dir_lines):
@@ -88,6 +109,22 @@ def _resolve_test_log_directory(
 
 
 def _find_tarball_url(info: dict, api_key: str) -> str:
+    """Locate the must-gather tarball URL on Magna.
+
+    Navigates into the test's cluster subdirectory and selects the
+    tarball, preferring files with "must_gather" or "must-gather"
+    in the name.
+
+    Args:
+        info: Resolution dict from ``_resolve_test_log_directory``.
+        api_key: Bearer token for Magna.
+
+    Returns:
+        Full URL to the must-gather tarball.
+
+    Raises:
+        ValueError: If no tarball is found in the expected directory.
+    """
     cluster_dir = "/".join([
         info["logs_url_root"].rstrip("/"),
         info["target_suffix"].rstrip("/"),
@@ -117,6 +154,7 @@ def _find_tarball_url(info: dict, api_key: str) -> str:
 
 
 def _download_tarball(url: str, dest: Path, api_key: str = "") -> None:
+    """Stream-download a tarball from a URL to a local file."""
     headers = {}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -128,6 +166,7 @@ def _download_tarball(url: str, dest: Path, api_key: str = "") -> None:
 
 
 def _extract_tarball(tarball_path: Path, extract_dir: Path) -> None:
+    """Extract a tarball to the given directory using safe data-only filtering."""
     extract_dir.mkdir(parents=True, exist_ok=True)
     with tarfile.open(tarball_path, "r:*") as tar:
         tar.extractall(path=extract_dir, filter="data")
@@ -136,6 +175,20 @@ def _extract_tarball(tarball_path: Path, extract_dir: Path) -> None:
 def download_must_gather(
     reportportal_url: str, force_redownload: bool = False
 ) -> str:
+    """Download, cache, and extract a must-gather tarball from ReportPortal.
+
+    Orchestrates the full pipeline: URL parsing, cache lookup (with file
+    locking for concurrent safety), resolution via RP API and Magna,
+    download, extraction, and metadata persistence.
+
+    Args:
+        reportportal_url: Full ReportPortal test log page URL.
+        force_redownload: If True, bypass cache and re-download.
+
+    Returns:
+        JSON string with path, test_name, cluster_name, tarball_url,
+        cached flag, and files_count.
+    """
     api_key, base_url, cache_dir = _get_config()
     launch_id, test_item_id = _extract_ids(reportportal_url)
 

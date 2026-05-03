@@ -13,6 +13,17 @@ from .text import _strip_managed_fields, _strip_yaml_keys, _tail_yaml_list
 
 
 def list_must_gather_contents(must_gather_path: str) -> str:
+    """Scan a must-gather directory and return a structured inventory.
+
+    Reports namespaces, cluster-scoped resources, ceph commands,
+    pod counts per namespace, NooBaa info, and total file count.
+
+    Args:
+        must_gather_path: Path to the top-level must-gather extraction.
+
+    Returns:
+        JSON string with the full contents inventory.
+    """
     root = _find_must_gather_root(must_gather_path)
 
     namespaces_dir = root / "namespaces"
@@ -94,6 +105,24 @@ def get_must_gather_resource(
     namespace: str = "",
     tail: int = 0,
 ) -> str:
+    """Retrieve a specific Kubernetes resource from a must-gather.
+
+    Supports cluster-scoped resources, namespaced resources, and ceph
+    command outputs. YAML resources are cleaned (managedFields stripped)
+    and large results are truncated.
+
+    Args:
+        must_gather_path: Path to the must-gather extraction.
+        resource_type: Resource type name or alias (e.g. "node", "pod",
+            "events", "ceph", "cephstatus").
+        name: Specific resource name. Omit to list available names.
+        namespace: Required for namespaced resources.
+        tail: For events, keep only the last N items (0 = all).
+
+    Returns:
+        JSON string with resource content, or a listing of available
+        names if *name* is omitted.
+    """
     root = _find_must_gather_root(must_gather_path)
     rt = resource_type.lower()
     rt = _RESOURCE_ALIASES.get(rt, rt)

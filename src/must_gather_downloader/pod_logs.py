@@ -14,6 +14,25 @@ def get_must_gather_pod_logs(
     time_from: str = "",
     time_to: str = "",
 ) -> str:
+    """Retrieve pod logs from a must-gather extraction.
+
+    Lists available pods when *pod_name* is empty, or returns log
+    content with optional container, tail, and time-range filtering.
+    Large logs are automatically truncated from the head.
+
+    Args:
+        must_gather_path: Path to the must-gather extraction.
+        namespace: Kubernetes namespace to look in.
+        pod_name: Pod name or substring to match. Empty lists pods.
+        container: Container name filter. Empty includes all.
+        previous: If True, read ``previous.log`` instead of ``current.log``.
+        tail: Number of lines to keep from the end (0 = all).
+        time_from: Inclusive start time filter (e.g. "03:38:00").
+        time_to: Inclusive end time filter (e.g. "03:41:00").
+
+    Returns:
+        JSON string with pod list or log contents and metadata.
+    """
     root = _find_must_gather_root(must_gather_path)
     pods_dir = root / "namespaces" / namespace / "pods"
     if not pods_dir.exists():

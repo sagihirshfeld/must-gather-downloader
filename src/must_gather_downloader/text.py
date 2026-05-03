@@ -10,6 +10,17 @@ _TIMESTAMP_RE = re.compile(
 
 
 def _strip_yaml_keys(content: str, keys: list[str]) -> str:
+    """Remove top-level YAML keys and their nested content.
+
+    Tracks indentation to determine where each key's value block ends.
+
+    Args:
+        content: Raw YAML text.
+        keys: Key names to strip (e.g. ["managedFields"]).
+
+    Returns:
+        YAML content with the specified keys and their values removed.
+    """
     triggers = tuple(k + ":" for k in keys)
     lines = content.split("\n")
     result = []
@@ -37,10 +48,20 @@ def _strip_yaml_keys(content: str, keys: list[str]) -> str:
 
 
 def _strip_managed_fields(content: str) -> str:
+    """Strip managedFields sections from YAML content."""
     return _strip_yaml_keys(content, ["managedFields"])
 
 
 def _tail_yaml_list(content: str, count: int) -> tuple[str, int]:
+    """Return the last *count* items from a YAML list.
+
+    Args:
+        content: YAML text containing a list of ``- `` prefixed items.
+        count: Maximum number of items to keep from the end. 0 keeps all.
+
+    Returns:
+        Tuple of (truncated content preserving the header, total item count).
+    """
     parts = re.split(r"(?=^- )", content, flags=re.MULTILINE)
     header = parts[0]
     items = parts[1:]
@@ -51,6 +72,13 @@ def _tail_yaml_list(content: str, count: int) -> tuple[str, int]:
 
 
 def _extract_time_str(line: str) -> str | None:
+    """Extract an HH:MM:SS timestamp from the beginning of a log line.
+
+    Supports ISO-8601, space-separated, and klog-style timestamp formats.
+
+    Returns:
+        Time string in HH:MM:SS format, or None if no timestamp is found.
+    """
     m = _TIMESTAMP_RE.search(line[:50])
     if not m:
         return None
@@ -64,6 +92,7 @@ def _extract_time_str(line: str) -> str | None:
 
 
 def _normalize_time(t: str) -> str:
+    """Normalize a time string to HH:MM:SS format."""
     t = t.strip()
     if "T" in t or " " in t:
         t = t.replace("T", " ").split(" ")[-1]
@@ -76,6 +105,19 @@ def _normalize_time(t: str) -> str:
 def _filter_log_by_time(
     content: str, time_from: str = "", time_to: str = ""
 ) -> tuple[str, int, int]:
+    """Filter log lines to a time window.
+
+    Lines without a parseable timestamp inherit the range status of the
+    previous line.
+
+    Args:
+        content: Raw log text.
+        time_from: Start of the window (inclusive). Empty string disables.
+        time_to: End of the window (inclusive). Empty string disables.
+
+    Returns:
+        Tuple of (filtered text, total line count, matched line count).
+    """
     lines = content.splitlines()
     total = len(lines)
     t_from = _normalize_time(time_from) if time_from else None

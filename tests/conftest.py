@@ -8,6 +8,7 @@ import requests
 
 @pytest.fixture
 def env_config(monkeypatch, tmp_path):
+    """Set RP_API_KEY, RP_BASE_URL, and MUST_GATHER_CACHE_DIR env vars for testing."""
     api_key = "test-api-key-12345"
     base_url = "https://reportportal.example.com"
     cache_dir = str(tmp_path / "cache")
@@ -19,11 +20,13 @@ def env_config(monkeypatch, tmp_path):
 
 @pytest.fixture
 def sample_rp_url():
+    """Return a sample ReportPortal test log URL."""
     return "https://reportportal.example.com/ui/#ocs/launches/all/12345/item/67890/log"
 
 
 @pytest.fixture
 def sample_info_dict():
+    """Return a sample resolution info dict as produced by _resolve_test_log_directory."""
     return {
         "logs_url_root": "https://magna.example.com/openshift-clusters/test-cluster-1/",
         "cluster_name": "test-cluster-1",
@@ -37,6 +40,7 @@ def sample_info_dict():
 
 @pytest.fixture
 def populated_cache_entry(tmp_path):
+    """Create a populated cache directory with metadata.json and an extracted file."""
     cache_dir = tmp_path / "cache"
     entry = cache_dir / "67890"
     extracted = entry / "extracted"
@@ -58,6 +62,7 @@ def populated_cache_entry(tmp_path):
 
 @pytest.fixture
 def sample_tarball(tmp_path):
+    """Create a temporary .tar.gz containing sample must-gather content."""
     content_dir = tmp_path / "tarball_content"
     content_dir.mkdir()
     (content_dir / "must-gather-log.txt").write_text("sample log data")
@@ -73,6 +78,7 @@ def sample_tarball(tmp_path):
 
 @pytest.fixture
 def must_gather_tree(tmp_path):
+    """Create a full must-gather directory tree with nodes, PVs, pods, ceph, and NooBaa data."""
     root = tmp_path / "extracted" / "must-gather-20250115"
 
     nodes = root / "cluster-scoped-resources" / "core" / "nodes"
@@ -318,6 +324,7 @@ def must_gather_tree(tmp_path):
 
 @pytest.fixture
 def empty_must_gather(tmp_path):
+    """Create an empty must-gather directory with no namespaces/ subdirectory."""
     extracted = tmp_path / "extracted"
     root = extracted / "must-gather-empty"
     root.mkdir(parents=True)
@@ -326,6 +333,7 @@ def empty_must_gather(tmp_path):
 
 @pytest.fixture
 def multi_root_must_gather(tmp_path):
+    """Create a must-gather extraction with multiple subdirectories for root detection."""
     extracted = tmp_path / "extracted"
     (extracted / "other-dir").mkdir(parents=True)
     preferred = extracted / "must-gather-20250115"
@@ -335,6 +343,7 @@ def multi_root_must_gather(tmp_path):
 
 @pytest.fixture
 def make_mock_response():
+    """Factory fixture returning a helper that builds mock requests.Response objects."""
     def _make(status_code=200, json_data=None, text="", headers=None):
         resp = MagicMock()
         resp.status_code = status_code
