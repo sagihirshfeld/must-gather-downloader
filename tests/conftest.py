@@ -94,15 +94,12 @@ def must_gather_tree(tmp_path):
 
     pvs = root / "cluster-scoped-resources" / "core" / "persistentvolumes"
     pvs.mkdir(parents=True)
-    (pvs / "pv-001.yaml").write_text(
-        "apiVersion: v1\nkind: PersistentVolume\nmetadata:\n  name: pv-001\n"
-    )
+    (pvs / "pv-001.yaml").write_text("apiVersion: v1\nkind: PersistentVolume\nmetadata:\n  name: pv-001\n")
 
     scs = root / "cluster-scoped-resources" / "storage.k8s.io" / "storageclasses"
     scs.mkdir(parents=True)
     (scs / "ocs-storagecluster-ceph-rbd.yaml").write_text(
-        "apiVersion: storage.k8s.io/v1\nkind: StorageClass\n"
-        "metadata:\n  name: ocs-storagecluster-ceph-rbd\n"
+        "apiVersion: storage.k8s.io/v1\nkind: StorageClass\nmetadata:\n  name: ocs-storagecluster-ceph-rbd\n"
     )
 
     os_ns = root / "namespaces" / "openshift-storage"
@@ -167,9 +164,7 @@ def must_gather_tree(tmp_path):
 
     secrets = os_ns / "core" / "secrets"
     secrets.mkdir(parents=True)
-    (secrets / "rook-ceph-admin.yaml").write_text(
-        "apiVersion: v1\nkind: Secret\nmetadata:\n  name: rook-ceph-admin\n"
-    )
+    (secrets / "rook-ceph-admin.yaml").write_text("apiVersion: v1\nkind: Secret\nmetadata:\n  name: rook-ceph-admin\n")
 
     # NooBaa CRD resources under main must-gather tree
     obc_dir = os_ns / "objectbucket.io" / "objectbucketclaims"
@@ -182,43 +177,36 @@ def must_gather_tree(tmp_path):
     ob_dir = root / "cluster-scoped-resources" / "objectbucket.io" / "objectbuckets"
     ob_dir.mkdir(parents=True)
     (ob_dir / "obc-ns-my-obc.yaml").write_text(
-        "apiVersion: objectbucket.io/v1alpha1\nkind: ObjectBucket\n"
-        "metadata:\n  name: obc-ns-my-obc\n"
+        "apiVersion: objectbucket.io/v1alpha1\nkind: ObjectBucket\nmetadata:\n  name: obc-ns-my-obc\n"
     )
 
     bs_dir = os_ns / "noobaa.io" / "backingstores"
     bs_dir.mkdir(parents=True)
     (bs_dir / "noobaa-default-backing-store.yaml").write_text(
-        "apiVersion: noobaa.io/v1alpha1\nkind: BackingStore\n"
-        "metadata:\n  name: noobaa-default-backing-store\n"
+        "apiVersion: noobaa.io/v1alpha1\nkind: BackingStore\nmetadata:\n  name: noobaa-default-backing-store\n"
     )
 
     ns_store_dir = os_ns / "noobaa.io" / "namespacestores"
     ns_store_dir.mkdir(parents=True)
     (ns_store_dir / "my-ns-store.yaml").write_text(
-        "apiVersion: noobaa.io/v1alpha1\nkind: NamespaceStore\n"
-        "metadata:\n  name: my-ns-store\n"
+        "apiVersion: noobaa.io/v1alpha1\nkind: NamespaceStore\nmetadata:\n  name: my-ns-store\n"
     )
 
     bc_dir = os_ns / "noobaa.io" / "bucketclasses"
     bc_dir.mkdir(parents=True)
     (bc_dir / "noobaa-default-bucket-class.yaml").write_text(
-        "apiVersion: noobaa.io/v1alpha1\nkind: BucketClass\n"
-        "metadata:\n  name: noobaa-default-bucket-class\n"
+        "apiVersion: noobaa.io/v1alpha1\nkind: BucketClass\nmetadata:\n  name: noobaa-default-bucket-class\n"
     )
 
     noobaa_cr_dir = os_ns / "noobaa.io" / "noobaas"
     noobaa_cr_dir.mkdir(parents=True)
     (noobaa_cr_dir / "noobaa.yaml").write_text(
-        "apiVersion: noobaa.io/v1alpha1\nkind: NooBaa\n"
-        "metadata:\n  name: noobaa\n"
+        "apiVersion: noobaa.io/v1alpha1\nkind: NooBaa\nmetadata:\n  name: noobaa\n"
     )
 
     default_ns = root / "namespaces" / "default" / "core"
     default_ns.mkdir(parents=True)
-    (default_ns / "events.yaml").write_text(
-        "apiVersion: v1\nkind: EventList\nitems: []\n"
-    )
+    (default_ns / "events.yaml").write_text("apiVersion: v1\nkind: EventList\nitems: []\n")
 
     ceph_cmds = root / "ceph" / "must_gather_commands"
     ceph_cmds.mkdir(parents=True)
@@ -242,13 +230,10 @@ def must_gather_tree(tmp_path):
     noobaa_raw = noobaa / "raw_output"
     noobaa_raw.mkdir(parents=True)
     (noobaa_raw / "status").write_text(
-        "system-address: https://10.0.0.1:443\n"
-        "backing-stores:\n  noobaa-default-backing-store: OPTIMAL\n"
+        "system-address: https://10.0.0.1:443\nbacking-stores:\n  noobaa-default-backing-store: OPTIMAL\n"
     )
     (noobaa_raw / "db_list.txt").write_text(
-        "       Name       | Size\n"
-        " nbcore            | 48 MB\n"
-        " buckets           | 16 MB\n"
+        "       Name       | Size\n nbcore            | 48 MB\n buckets           | 16 MB\n"
     )
 
     # Create a small diagnostics tarball
@@ -280,43 +265,37 @@ def must_gather_tree(tmp_path):
     noobaa_obc_dir = noobaa_ns / "objectbucket.io" / "objectbucketclaims"
     noobaa_obc_dir.mkdir(parents=True)
     (noobaa_obc_dir / "my-obc.yaml").write_text(
-        "apiVersion: objectbucket.io/v1alpha1\nkind: ObjectBucketClaim\n"
-        "metadata:\n  name: my-obc\n"
+        "apiVersion: objectbucket.io/v1alpha1\nkind: ObjectBucketClaim\nmetadata:\n  name: my-obc\n"
     )
 
     noobaa_bs_dir = noobaa_ns / "noobaa.io" / "backingstores"
     noobaa_bs_dir.mkdir(parents=True)
     (noobaa_bs_dir / "noobaa-default-backing-store.yaml").write_text(
-        "apiVersion: noobaa.io/v1alpha1\nkind: BackingStore\n"
-        "metadata:\n  name: noobaa-default-backing-store\n"
+        "apiVersion: noobaa.io/v1alpha1\nkind: BackingStore\nmetadata:\n  name: noobaa-default-backing-store\n"
     )
 
     noobaa_ob_dir = noobaa / "cluster-scoped-resources" / "objectbucket.io" / "objectbuckets"
     noobaa_ob_dir.mkdir(parents=True)
     (noobaa_ob_dir / "obc-ns-my-obc.yaml").write_text(
-        "apiVersion: objectbucket.io/v1alpha1\nkind: ObjectBucket\n"
-        "metadata:\n  name: obc-ns-my-obc\n"
+        "apiVersion: objectbucket.io/v1alpha1\nkind: ObjectBucket\nmetadata:\n  name: obc-ns-my-obc\n"
     )
 
     noobaa_nsstore_dir = noobaa_ns / "noobaa.io" / "namespacestores"
     noobaa_nsstore_dir.mkdir(parents=True)
     (noobaa_nsstore_dir / "my-ns-store.yaml").write_text(
-        "apiVersion: noobaa.io/v1alpha1\nkind: NamespaceStore\n"
-        "metadata:\n  name: my-ns-store\n"
+        "apiVersion: noobaa.io/v1alpha1\nkind: NamespaceStore\nmetadata:\n  name: my-ns-store\n"
     )
 
     noobaa_bc_dir = noobaa_ns / "noobaa.io" / "bucketclasses"
     noobaa_bc_dir.mkdir(parents=True)
     (noobaa_bc_dir / "noobaa-default-bucket-class.yaml").write_text(
-        "apiVersion: noobaa.io/v1alpha1\nkind: BucketClass\n"
-        "metadata:\n  name: noobaa-default-bucket-class\n"
+        "apiVersion: noobaa.io/v1alpha1\nkind: BucketClass\nmetadata:\n  name: noobaa-default-bucket-class\n"
     )
 
     noobaa_cr_dir = noobaa_ns / "noobaa.io" / "noobaas"
     noobaa_cr_dir.mkdir(parents=True)
     (noobaa_cr_dir / "noobaa.yaml").write_text(
-        "apiVersion: noobaa.io/v1alpha1\nkind: NooBaa\n"
-        "metadata:\n  name: noobaa\n"
+        "apiVersion: noobaa.io/v1alpha1\nkind: NooBaa\nmetadata:\n  name: noobaa\n"
     )
 
     return {"extracted": tmp_path / "extracted", "root": root}
@@ -344,6 +323,7 @@ def multi_root_must_gather(tmp_path):
 @pytest.fixture
 def make_mock_response():
     """Factory fixture returning a helper that builds mock requests.Response objects."""
+
     def _make(status_code=200, json_data=None, text="", headers=None):
         resp = MagicMock()
         resp.status_code = status_code
@@ -358,4 +338,5 @@ def make_mock_response():
         resp.__exit__ = MagicMock(return_value=False)
         resp.iter_content.return_value = iter([b"fake tarball content"])
         return resp
+
     return _make

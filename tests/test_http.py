@@ -51,18 +51,14 @@ class TestFetchHtmlLines:
         mock_get.return_value = make_mock_response(text="line1\nline2\n")
         result = _fetch_html_lines("https://magna.example.com/dir/", "my-key")
         assert result == ["line1", "line2"]
-        call_headers = mock_get.call_args.kwargs.get(
-            "headers", mock_get.call_args[1].get("headers", {})
-        )
+        call_headers = mock_get.call_args.kwargs.get("headers", mock_get.call_args[1].get("headers", {}))
         assert "Authorization" in call_headers
 
     @patch(f"{RP_MODULE}.requests.get")
     def test_without_api_key(self, mock_get, make_mock_response):
         mock_get.return_value = make_mock_response(text="line1\n")
         _fetch_html_lines("https://magna.example.com/dir/")
-        call_headers = mock_get.call_args.kwargs.get(
-            "headers", mock_get.call_args[1].get("headers", {})
-        )
+        call_headers = mock_get.call_args.kwargs.get("headers", mock_get.call_args[1].get("headers", {}))
         assert "Authorization" not in call_headers
 
     @patch(f"{RP_MODULE}.requests.get")
@@ -87,9 +83,7 @@ class TestDownloadTarball:
         mock_get.return_value = make_mock_response()
         dest = tmp_path / "out.tar.gz"
         _download_tarball("https://magna.example.com/file.tar.gz", dest, "my-key")
-        call_headers = mock_get.call_args.kwargs.get(
-            "headers", mock_get.call_args[1].get("headers", {})
-        )
+        call_headers = mock_get.call_args.kwargs.get("headers", mock_get.call_args[1].get("headers", {}))
         assert call_headers.get("Authorization") == "Bearer my-key"
 
     @patch(f"{DL_MODULE}.requests.get")

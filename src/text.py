@@ -38,9 +38,7 @@ def _strip_yaml_keys(content: str, keys: list[str]) -> str:
             base_indent = indent
             continue
         if skip:
-            if indent > base_indent or (
-                indent == base_indent and stripped.startswith("- ")
-            ):
+            if indent > base_indent or (indent == base_indent and stripped.startswith("- ")):
                 continue
             skip = False
         result.append(line)
@@ -102,9 +100,7 @@ def _normalize_time(t: str) -> str:
     return t
 
 
-def _filter_log_by_time(
-    content: str, time_from: str = "", time_to: str = ""
-) -> tuple[str, int, int]:
+def _filter_log_by_time(content: str, time_from: str = "", time_to: str = "") -> tuple[str, int, int]:
     """Filter log lines to a time window.
 
     Lines without a parseable timestamp inherit the range status of the

@@ -56,17 +56,19 @@ def list_must_gather_cache() -> str:
 
         size_bytes = meta.get("size_bytes")
         if size_bytes is None:
-            size_bytes = sum(
-                f.stat().st_size for f in extracted_dir.rglob("*") if f.is_file()
-            ) if extracted_dir.exists() else 0
+            size_bytes = (
+                sum(f.stat().st_size for f in extracted_dir.rglob("*") if f.is_file()) if extracted_dir.exists() else 0
+            )
 
-        entries.append({
-            "test_item_id": child.name,
-            "test_name": meta.get("test_name", "unknown"),
-            "cluster_name": meta.get("cluster_name", "unknown"),
-            "path": str(extracted_dir),
-            "downloaded_at": meta.get("downloaded_at", "unknown"),
-            "size_mb": round(size_bytes / (1024 * 1024), 1),
-        })
+        entries.append(
+            {
+                "test_item_id": child.name,
+                "test_name": meta.get("test_name", "unknown"),
+                "cluster_name": meta.get("cluster_name", "unknown"),
+                "path": str(extracted_dir),
+                "downloaded_at": meta.get("downloaded_at", "unknown"),
+                "size_mb": round(size_bytes / (1024 * 1024), 1),
+            }
+        )
 
     return json.dumps({"entries": entries, "cache_dir": str(cache_dir)})

@@ -1,7 +1,6 @@
 import json
 
 import pytest
-
 from must_gather_downloader.pod_logs import search_pod_logs
 
 
@@ -53,8 +52,7 @@ def search_tree(tmp_path):
     core_pod = pods_dir / "noobaa-core-0" / "noobaa-core" / "noobaa-core" / "logs"
     core_pod.mkdir(parents=True)
     (core_pod / "current.log").write_text(
-        "2025-01-15T03:38:00.000Z INFO core processing\n"
-        "2025-01-15T03:39:00.000Z DEBUG core heartbeat\n"
+        "2025-01-15T03:38:00.000Z INFO core processing\n2025-01-15T03:39:00.000Z DEBUG core heartbeat\n"
     )
 
     return {"extracted": tmp_path / "extracted", "root": root, "namespace": ns}
@@ -62,13 +60,15 @@ def search_tree(tmp_path):
 
 class TestBasicSearch:
     def test_pattern_match_with_context(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            search_tree["namespace"],
-            "noobaa-endpoint-7f8b9c6d5-x2k4m",
-            "ECONNREFUSED",
-            container="endpoint",
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                search_tree["namespace"],
+                "noobaa-endpoint-7f8b9c6d5-x2k4m",
+                "ECONNREFUSED",
+                container="endpoint",
+            )
+        )
         assert result["total_matches"] == 3
         assert not result["truncated"]
 
@@ -79,150 +79,176 @@ class TestBasicSearch:
         assert len(m["context_after"]) == 3
 
     def test_no_matches_returns_empty_list(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            search_tree["namespace"],
-            "noobaa-endpoint-7f8b9c6d5-x2k4m",
-            "NONEXISTENT_PATTERN",
-            container="endpoint",
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                search_tree["namespace"],
+                "noobaa-endpoint-7f8b9c6d5-x2k4m",
+                "NONEXISTENT_PATTERN",
+                container="endpoint",
+            )
+        )
         assert result["total_matches"] == 0
         assert result["matches"] == []
         assert not result["truncated"]
 
     def test_empty_pattern_returns_error(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            search_tree["namespace"],
-            "noobaa-endpoint",
-            "",
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                search_tree["namespace"],
+                "noobaa-endpoint",
+                "",
+            )
+        )
         assert "error" in result
 
 
 class TestCaseSensitivity:
     def test_case_insensitive_default(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            search_tree["namespace"],
-            "noobaa-endpoint-7f8b9c6d5-x2k4m",
-            "econnrefused",
-            container="endpoint",
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                search_tree["namespace"],
+                "noobaa-endpoint-7f8b9c6d5-x2k4m",
+                "econnrefused",
+                container="endpoint",
+            )
+        )
         assert result["total_matches"] == 3
 
     def test_case_sensitive(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            search_tree["namespace"],
-            "noobaa-endpoint-7f8b9c6d5-x2k4m",
-            "econnrefused",
-            container="endpoint",
-            case_sensitive=True,
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                search_tree["namespace"],
+                "noobaa-endpoint-7f8b9c6d5-x2k4m",
+                "econnrefused",
+                container="endpoint",
+                case_sensitive=True,
+            )
+        )
         assert result["total_matches"] == 0
 
     def test_case_sensitive_exact_match(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            search_tree["namespace"],
-            "noobaa-endpoint-7f8b9c6d5-x2k4m",
-            "ECONNREFUSED",
-            container="endpoint",
-            case_sensitive=True,
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                search_tree["namespace"],
+                "noobaa-endpoint-7f8b9c6d5-x2k4m",
+                "ECONNREFUSED",
+                container="endpoint",
+                case_sensitive=True,
+            )
+        )
         assert result["total_matches"] == 3
 
 
 class TestTimeFiltering:
     def test_time_from_filter(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            search_tree["namespace"],
-            "noobaa-endpoint-7f8b9c6d5-x2k4m",
-            "ECONNREFUSED",
-            container="endpoint",
-            time_from="03:39:00",
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                search_tree["namespace"],
+                "noobaa-endpoint-7f8b9c6d5-x2k4m",
+                "ECONNREFUSED",
+                container="endpoint",
+                time_from="03:39:00",
+            )
+        )
         assert result["total_matches"] == 1
         assert "10.0.0.2" in result["matches"][0]["line"]
 
     def test_time_to_filter(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            search_tree["namespace"],
-            "noobaa-endpoint-7f8b9c6d5-x2k4m",
-            "ECONNREFUSED",
-            container="endpoint",
-            time_to="03:38:31",
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                search_tree["namespace"],
+                "noobaa-endpoint-7f8b9c6d5-x2k4m",
+                "ECONNREFUSED",
+                container="endpoint",
+                time_to="03:38:31",
+            )
+        )
         assert result["total_matches"] == 2
 
     def test_time_range_filter(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            search_tree["namespace"],
-            "noobaa-endpoint-7f8b9c6d5-x2k4m",
-            "ECONNREFUSED",
-            container="endpoint",
-            time_from="03:38:30",
-            time_to="03:38:31",
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                search_tree["namespace"],
+                "noobaa-endpoint-7f8b9c6d5-x2k4m",
+                "ECONNREFUSED",
+                container="endpoint",
+                time_from="03:38:30",
+                time_to="03:38:31",
+            )
+        )
         assert result["total_matches"] == 2
 
 
 class TestPodMatching:
     def test_substring_matches_multiple_pods(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            search_tree["namespace"],
-            "noobaa-endpoint",
-            "ECONNREFUSED",
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                search_tree["namespace"],
+                "noobaa-endpoint",
+                "ECONNREFUSED",
+            )
+        )
         pods_with_matches = {m["pod"] for m in result["matches"]}
         assert len(pods_with_matches) == 2
         assert "noobaa-endpoint-7f8b9c6d5-x2k4m" in pods_with_matches
         assert "noobaa-endpoint-7f8b9c6d5-y3l5n" in pods_with_matches
 
     def test_no_matching_pod_returns_error(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            search_tree["namespace"],
-            "nonexistent-pod",
-            "ECONNREFUSED",
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                search_tree["namespace"],
+                "nonexistent-pod",
+                "ECONNREFUSED",
+            )
+        )
         assert "error" in result
         assert "available_pods" in result
 
     def test_invalid_namespace_returns_error(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            "nonexistent-namespace",
-            "noobaa-endpoint",
-            "ECONNREFUSED",
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                "nonexistent-namespace",
+                "noobaa-endpoint",
+                "ECONNREFUSED",
+            )
+        )
         assert "error" in result
 
 
 class TestContainerFiltering:
     def test_filter_specific_container(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            search_tree["namespace"],
-            "noobaa-endpoint-7f8b9c6d5-x2k4m",
-            "ECONNREFUSED",
-            container="sidecar",
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                search_tree["namespace"],
+                "noobaa-endpoint-7f8b9c6d5-x2k4m",
+                "ECONNREFUSED",
+                container="sidecar",
+            )
+        )
         assert result["total_matches"] == 1
         assert result["matches"][0]["container"] == "sidecar"
 
     def test_no_container_searches_all(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            search_tree["namespace"],
-            "noobaa-endpoint-7f8b9c6d5-x2k4m",
-            "ECONNREFUSED",
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                search_tree["namespace"],
+                "noobaa-endpoint-7f8b9c6d5-x2k4m",
+                "ECONNREFUSED",
+            )
+        )
         containers = {m["container"] for m in result["matches"]}
         assert "endpoint" in containers
         assert "sidecar" in containers
@@ -230,89 +256,103 @@ class TestContainerFiltering:
 
 class TestMaxResults:
     def test_truncation(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            search_tree["namespace"],
-            "noobaa-endpoint-7f8b9c6d5-x2k4m",
-            "ECONNREFUSED",
-            container="endpoint",
-            max_results=2,
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                search_tree["namespace"],
+                "noobaa-endpoint-7f8b9c6d5-x2k4m",
+                "ECONNREFUSED",
+                container="endpoint",
+                max_results=2,
+            )
+        )
         assert result["total_matches"] == 2
         assert result["truncated"] is True
 
     def test_no_truncation_when_under_limit(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            search_tree["namespace"],
-            "noobaa-endpoint-7f8b9c6d5-x2k4m",
-            "ECONNREFUSED",
-            container="endpoint",
-            max_results=100,
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                search_tree["namespace"],
+                "noobaa-endpoint-7f8b9c6d5-x2k4m",
+                "ECONNREFUSED",
+                container="endpoint",
+                max_results=100,
+            )
+        )
         assert result["truncated"] is False
 
 
 class TestPreviousLog:
     def test_searches_previous_log(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            search_tree["namespace"],
-            "noobaa-endpoint-7f8b9c6d5-x2k4m",
-            "ECONNREFUSED",
-            container="endpoint",
-            previous=True,
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                search_tree["namespace"],
+                "noobaa-endpoint-7f8b9c6d5-x2k4m",
+                "ECONNREFUSED",
+                container="endpoint",
+                previous=True,
+            )
+        )
         assert result["total_matches"] == 1
         assert "old" in result["matches"][0]["line"]
 
 
 class TestRegex:
     def test_regex_pattern(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            search_tree["namespace"],
-            "noobaa-endpoint-7f8b9c6d5-x2k4m",
-            r"ECONNREFUSED.*443",
-            container="endpoint",
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                search_tree["namespace"],
+                "noobaa-endpoint-7f8b9c6d5-x2k4m",
+                r"ECONNREFUSED.*443",
+                container="endpoint",
+            )
+        )
         assert result["total_matches"] == 2
 
     def test_invalid_regex_falls_back_to_literal(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            search_tree["namespace"],
-            "noobaa-endpoint-7f8b9c6d5-x2k4m",
-            "[invalid regex",
-            container="endpoint",
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                search_tree["namespace"],
+                "noobaa-endpoint-7f8b9c6d5-x2k4m",
+                "[invalid regex",
+                container="endpoint",
+            )
+        )
         assert result["total_matches"] == 0
         assert not result["truncated"]
 
 
 class TestContextLines:
     def test_zero_context_lines(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            search_tree["namespace"],
-            "noobaa-endpoint-7f8b9c6d5-x2k4m",
-            "ECONNREFUSED",
-            container="endpoint",
-            context_lines=0,
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                search_tree["namespace"],
+                "noobaa-endpoint-7f8b9c6d5-x2k4m",
+                "ECONNREFUSED",
+                container="endpoint",
+                context_lines=0,
+            )
+        )
         for m in result["matches"]:
             assert m["context_before"] == []
             assert m["context_after"] == []
 
     def test_context_at_file_boundaries(self, search_tree):
-        result = json.loads(search_pod_logs(
-            str(search_tree["extracted"]),
-            search_tree["namespace"],
-            "noobaa-endpoint-7f8b9c6d5-x2k4m",
-            "starting endpoint$",
-            container="endpoint",
-            context_lines=5,
-        ))
+        result = json.loads(
+            search_pod_logs(
+                str(search_tree["extracted"]),
+                search_tree["namespace"],
+                "noobaa-endpoint-7f8b9c6d5-x2k4m",
+                "starting endpoint$",
+                container="endpoint",
+                context_lines=5,
+            )
+        )
         assert result["total_matches"] == 1
         assert result["matches"][0]["context_before"] == []
         assert len(result["matches"][0]["context_after"]) == 5

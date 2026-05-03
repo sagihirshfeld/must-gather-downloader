@@ -19,10 +19,7 @@ def _extract_ids(url: str) -> tuple[str, str]:
         ValueError: If the URL format is invalid or IDs cannot be extracted.
     """
     if "launches/" not in url or "log" not in url:
-        raise ValueError(
-            "Invalid ReportPortal URL. Expected a test log page URL "
-            "containing '/launches/' and '/log'."
-        )
+        raise ValueError("Invalid ReportPortal URL. Expected a test log page URL containing '/launches/' and '/log'.")
     after_launches = url.split("launches/")[1]
     parts = after_launches.split("/")
     try:

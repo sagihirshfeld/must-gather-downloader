@@ -17,16 +17,10 @@ def pipeline_mocks(tmp_path, sample_info_dict):
 
     patches = {
         "get_config": patch(f"{MODULE}._get_config", return_value=config),
-        "extract_ids": patch(
-            f"{MODULE}._extract_ids", return_value=("12345", "67890")
-        ),
+        "extract_ids": patch(f"{MODULE}._extract_ids", return_value=("12345", "67890")),
         "cache_check": patch(f"{MODULE}._cache_check", return_value=None),
-        "resolve": patch(
-            f"{MODULE}._resolve_test_log_directory", return_value=sample_info_dict
-        ),
-        "find_tarball": patch(
-            f"{MODULE}._find_tarball_url", return_value=tarball_url
-        ),
+        "resolve": patch(f"{MODULE}._resolve_test_log_directory", return_value=sample_info_dict),
+        "find_tarball": patch(f"{MODULE}._find_tarball_url", return_value=tarball_url),
         "download": patch(f"{MODULE}._download_tarball"),
         "extract": patch(f"{MODULE}._extract_tarball"),
         "count": patch(f"{MODULE}._count_files_and_size", return_value=(42, 1024)),
@@ -58,9 +52,7 @@ class TestDownloadCacheHit:
         entry = cache_dir / "67890"
         (entry / "extracted").mkdir(parents=True)
 
-        result = json.loads(
-            download_must_gather("https://rp.example.com/launches/all/12345/item/67890/log")
-        )
+        result = json.loads(download_must_gather("https://rp.example.com/launches/all/12345/item/67890/log"))
         assert result["cached"] is True
         mocks["resolve"].assert_not_called()
         mocks["flock"].assert_not_called()
@@ -78,9 +70,7 @@ class TestDownloadCacheHit:
         entry = cache_dir / "67890"
         (entry / "extracted").mkdir(parents=True)
 
-        result = json.loads(
-            download_must_gather("https://rp.example.com/launches/all/12345/item/67890/log")
-        )
+        result = json.loads(download_must_gather("https://rp.example.com/launches/all/12345/item/67890/log"))
         assert result["cached"] is True
         mocks["resolve"].assert_not_called()
 
@@ -89,9 +79,7 @@ class TestDownloadFullPipeline:
     def test_full_download(self, pipeline_mocks, sample_info_dict):
         mocks, cache_dir = pipeline_mocks
 
-        result = json.loads(
-            download_must_gather("https://rp.example.com/launches/all/12345/item/67890/log")
-        )
+        result = json.loads(download_must_gather("https://rp.example.com/launches/all/12345/item/67890/log"))
         assert result["cached"] is False
         assert result["files_count"] == 42
         assert result["test_name"] == "test_my_feature"
@@ -114,9 +102,7 @@ class TestDownloadFullPipeline:
 
     def test_return_json_structure(self, pipeline_mocks):
         mocks, cache_dir = pipeline_mocks
-        result = json.loads(
-            download_must_gather("https://rp.example.com/launches/all/12345/item/67890/log")
-        )
+        result = json.loads(download_must_gather("https://rp.example.com/launches/all/12345/item/67890/log"))
         expected_keys = {"path", "test_name", "cluster_name", "tarball_url", "cached", "files_count"}
         assert set(result.keys()) == expected_keys
 

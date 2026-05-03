@@ -1,6 +1,4 @@
 import json
-from pathlib import Path
-from unittest.mock import patch
 
 from must_gather_downloader.cache import _cache_check, list_must_gather_cache
 from must_gather_downloader.download import _extract_tarball
@@ -49,9 +47,7 @@ class TestExtractTarball:
         extract_dir = tmp_path / "extracted"
         _extract_tarball(sample_tarball, extract_dir)
         assert (extract_dir / "must-gather" / "must-gather-log.txt").exists()
-        assert (
-            extract_dir / "must-gather" / "must-gather-log.txt"
-        ).read_text() == "sample log data"
+        assert (extract_dir / "must-gather" / "must-gather-log.txt").read_text() == "sample log data"
         assert (extract_dir / "must-gather" / "subdir" / "nested.yaml").exists()
 
     def test_creates_dir(self, sample_tarball, tmp_path):
@@ -69,9 +65,7 @@ class TestListMustGatherCache:
     def test_with_entries(self, populated_cache_entry, monkeypatch):
         monkeypatch.setenv("RP_API_KEY", "key")
         monkeypatch.setenv("RP_BASE_URL", "https://rp.example.com")
-        monkeypatch.setenv(
-            "MUST_GATHER_CACHE_DIR", str(populated_cache_entry["cache_dir"])
-        )
+        monkeypatch.setenv("MUST_GATHER_CACHE_DIR", str(populated_cache_entry["cache_dir"]))
         result = json.loads(list_must_gather_cache())
         assert len(result["entries"]) == 1
         entry = result["entries"][0]
@@ -88,13 +82,15 @@ class TestListMustGatherCache:
         good = cache_dir / "good"
         (good / "extracted").mkdir(parents=True)
         (good / "metadata.json").write_text(
-            json.dumps({
-                "test_name": "t",
-                "cluster_name": "c",
-                "tarball_url": "u",
-                "downloaded_at": "2025-01-01",
-                "size_bytes": 100,
-            })
+            json.dumps(
+                {
+                    "test_name": "t",
+                    "cluster_name": "c",
+                    "tarball_url": "u",
+                    "downloaded_at": "2025-01-01",
+                    "size_bytes": 100,
+                }
+            )
         )
 
         bad = cache_dir / "bad"
@@ -115,12 +111,14 @@ class TestListMustGatherCache:
         extracted.mkdir(parents=True)
         (extracted / "file.txt").write_text("hello")
         (entry / "metadata.json").write_text(
-            json.dumps({
-                "test_name": "t",
-                "cluster_name": "c",
-                "tarball_url": "u",
-                "downloaded_at": "2025-01-01",
-            })
+            json.dumps(
+                {
+                    "test_name": "t",
+                    "cluster_name": "c",
+                    "tarball_url": "u",
+                    "downloaded_at": "2025-01-01",
+                }
+            )
         )
         monkeypatch.setenv("MUST_GATHER_CACHE_DIR", str(cache_dir))
         result = json.loads(list_must_gather_cache())

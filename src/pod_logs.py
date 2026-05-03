@@ -18,9 +18,7 @@ class _PodLogFile:
     path: Path
 
 
-def _find_pods_dir(
-    must_gather_path: str, namespace: str
-) -> tuple[Path | None, str | None, list[str]]:
+def _find_pods_dir(must_gather_path: str, namespace: str) -> tuple[Path | None, str | None, list[str]]:
     """Locate the pods directory for a namespace.
 
     Returns:
@@ -33,11 +31,7 @@ def _find_pods_dir(
 
     if not pods_dir.exists():
         namespaces_dir = root / "namespaces"
-        available_ns = (
-            sorted(d.name for d in namespaces_dir.iterdir() if d.is_dir())
-            if namespaces_dir.exists()
-            else []
-        )
+        available_ns = sorted(d.name for d in namespaces_dir.iterdir() if d.is_dir()) if namespaces_dir.exists() else []
         return None, f"Namespace '{namespace}' not found or has no pods directory", available_ns
 
     return pods_dir, None, []
@@ -71,12 +65,14 @@ def _find_pod_log_files(
             container_name = log_path.relative_to(pod_dir).parts[0]
             if container and container != container_name:
                 continue
-            results.append(_PodLogFile(
-                pod=pod,
-                container=container_name,
-                log_file=log_filename,
-                path=log_path,
-            ))
+            results.append(
+                _PodLogFile(
+                    pod=pod,
+                    container=container_name,
+                    log_file=log_filename,
+                    path=log_path,
+                )
+            )
     return results
 
 
@@ -111,30 +107,35 @@ def get_must_gather_pod_logs(
     """
     pods_dir, error, available_ns = _find_pods_dir(must_gather_path, namespace)
     if pods_dir is None:
-        return json.dumps({
-            "error": error,
-            "available_namespaces": available_ns,
-        })
+        return json.dumps(
+            {
+                "error": error,
+                "available_namespaces": available_ns,
+            }
+        )
 
     all_pods = sorted(d.name for d in pods_dir.iterdir() if d.is_dir())
 
     if not pod_name:
-        return json.dumps({
-            "namespace": namespace,
-            "available_pods": all_pods,
-            "hint": "Specify pod_name to retrieve logs",
-        })
+        return json.dumps(
+            {
+                "namespace": namespace,
+                "available_pods": all_pods,
+                "hint": "Specify pod_name to retrieve logs",
+            }
+        )
 
     matched_pods = [p for p in all_pods if pod_name in p]
     if not matched_pods:
-        return json.dumps({
-            "error": f"No pods matching '{pod_name}' found",
-            "namespace": namespace,
-            "available_pods": all_pods,
-        })
+        return json.dumps(
+            {
+                "error": f"No pods matching '{pod_name}' found",
+                "namespace": namespace,
+                "available_pods": all_pods,
+            }
+        )
 
     log_files = _find_pod_log_files(pods_dir, pod_name, container, previous)
-    log_filename = "previous.log" if previous else "current.log"
     logs = []
 
     for lf in log_files:
@@ -142,9 +143,7 @@ def get_must_gather_pod_logs(
         truncated = False
 
         if time_from or time_to:
-            content, _total, _matched = _filter_log_by_time(
-                content, time_from, time_to
-            )
+            content, _total, _matched = _filter_log_by_time(content, time_from, time_to)
 
         if tail > 0:
             lines = content.splitlines()
@@ -166,14 +165,16 @@ def get_must_gather_pod_logs(
             truncated = True
 
         line_count = len(content.splitlines())
-        logs.append({
-            "pod": lf.pod,
-            "container": lf.container,
-            "log_file": lf.log_file,
-            "lines": line_count,
-            "content": content,
-            "truncated": truncated,
-        })
+        logs.append(
+            {
+                "pod": lf.pod,
+                "container": lf.container,
+                "log_file": lf.log_file,
+                "lines": line_count,
+                "content": content,
+                "truncated": truncated,
+            }
+        )
 
     result = {
         "namespace": namespace,
@@ -227,19 +228,23 @@ def search_pod_logs(
 
     pods_dir, error, available_ns = _find_pods_dir(must_gather_path, namespace)
     if pods_dir is None:
-        return json.dumps({
-            "error": error,
-            "available_namespaces": available_ns,
-        })
+        return json.dumps(
+            {
+                "error": error,
+                "available_namespaces": available_ns,
+            }
+        )
 
     all_pods = sorted(d.name for d in pods_dir.iterdir() if d.is_dir())
     matched_pods = [p for p in all_pods if pod_name in p]
     if not matched_pods:
-        return json.dumps({
-            "error": f"No pods matching '{pod_name}' found",
-            "namespace": namespace,
-            "available_pods": all_pods,
-        })
+        return json.dumps(
+            {
+                "error": f"No pods matching '{pod_name}' found",
+                "namespace": namespace,
+                "available_pods": all_pods,
+            }
+        )
 
     log_files = _find_pod_log_files(pods_dir, pod_name, container, previous)
 
@@ -287,15 +292,17 @@ def search_pod_logs(
                 for i in range(orig_idx + 1, min(total_lines, orig_idx + 1 + context_lines)):
                     ctx_after.append(lines[i][:_MAX_LINE_LENGTH])
 
-                all_matches.append({
-                    "pod": lf.pod,
-                    "container": lf.container,
-                    "log_file": lf.log_file,
-                    "line_number": orig_idx + 1,
-                    "line": line.strip()[:_MAX_LINE_LENGTH],
-                    "context_before": ctx_before,
-                    "context_after": ctx_after,
-                })
+                all_matches.append(
+                    {
+                        "pod": lf.pod,
+                        "container": lf.container,
+                        "log_file": lf.log_file,
+                        "line_number": orig_idx + 1,
+                        "line": line.strip()[:_MAX_LINE_LENGTH],
+                        "context_before": ctx_before,
+                        "context_after": ctx_after,
+                    }
+                )
 
                 if len(all_matches) >= max_results:
                     truncated = True
@@ -304,11 +311,13 @@ def search_pod_logs(
         if truncated:
             break
 
-    return json.dumps({
-        "pattern": pattern,
-        "namespace": namespace,
-        "pod_name": pod_name,
-        "matches": all_matches,
-        "total_matches": len(all_matches),
-        "truncated": truncated,
-    })
+    return json.dumps(
+        {
+            "pattern": pattern,
+            "namespace": namespace,
+            "pod_name": pod_name,
+            "matches": all_matches,
+            "total_matches": len(all_matches),
+            "truncated": truncated,
+        }
+    )
