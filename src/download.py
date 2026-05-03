@@ -10,13 +10,13 @@ from urllib.parse import unquote
 import requests
 
 from .cache import _cache_check
-from .config import RP_PROJECT, _get_config, _ssl_verify
+from .config import _get_config, _ssl_verify
 from .navigate import _count_files, _count_files_and_size
 from .reportportal import (
     _extract_hrefs,
     _extract_ids,
     _fetch_html_lines,
-    _fetch_json,
+    _resolve_magna_metadata,
     _safe_test_name,
 )
 
@@ -42,25 +42,10 @@ def _resolve_test_log_directory(launch_id: str, test_item_id: str, api_key: str,
         ValueError: If metadata cannot be extracted or the test is not
             found in any failed_testcase directory.
     """
-    rp_api = f"{base_url}/api/v1/{RP_PROJECT}"
-    launch_api = f"{rp_api}/launch?filter.eq.id={launch_id}"
-    item_api = f"{rp_api}/item/{test_item_id}"
-
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        launch_future = pool.submit(_fetch_json, launch_api, api_key)
-        item_future = pool.submit(_fetch_json, item_api, api_key)
-        launch_json = launch_future.result()
-        item_json = item_future.result()
-
-    try:
-        description = launch_json["content"][0]["description"]
-        logs_url_root = description.split("Logs URL:")[1].strip().split()[0]
-        cluster_name = logs_url_root.split("openshift-clusters/")[1].split("/")[0]
-        test_name = item_json["name"]
-    except (KeyError, IndexError) as e:
-        raise ValueError(
-            f"Could not extract Magna logs location from ReportPortal. Missing description or name field: {e}"
-        )
+    meta = _resolve_magna_metadata(launch_id, test_item_id, api_key, base_url)
+    logs_url_root = meta["logs_url_root"]
+    cluster_name = meta["cluster_name"]
+    test_name = meta["test_name"]
 
     lines = _fetch_html_lines(logs_url_root, api_key)
     hrefs = _extract_hrefs(lines)

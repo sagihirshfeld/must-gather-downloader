@@ -4,6 +4,7 @@ import pytest
 from must_gather_downloader.download import _find_tarball_url, _resolve_test_log_directory
 
 MODULE = "must_gather_downloader.download"
+RP_MODULE = "must_gather_downloader.reportportal"
 
 LAUNCH_JSON = {
     "content": [{"description": ("Build #42\nLogs URL: https://magna.example.com/openshift-clusters/test-cluster-1/")}]
@@ -20,7 +21,7 @@ NO_MATCH_HTML_LINES = ['<a href="other_test_ocs_logs/">other_test_ocs_logs/</a>'
 
 class TestResolveTestLogDirectory:
     @patch(f"{MODULE}._fetch_html_lines")
-    @patch(f"{MODULE}._fetch_json")
+    @patch(f"{RP_MODULE}._fetch_json")
     def test_success(self, mock_fetch_json, mock_fetch_html):
         mock_fetch_json.side_effect = [LAUNCH_JSON, ITEM_JSON]
         mock_fetch_html.side_effect = [ROOT_DIR_HTML_LINES, MATCH_HTML_LINES]
@@ -34,7 +35,7 @@ class TestResolveTestLogDirectory:
         assert "safe_test_name" in result
 
     @patch(f"{MODULE}._fetch_html_lines")
-    @patch(f"{MODULE}._fetch_json")
+    @patch(f"{RP_MODULE}._fetch_json")
     def test_no_failed_testcase_dirs(self, mock_fetch_json, mock_fetch_html):
         mock_fetch_json.side_effect = [LAUNCH_JSON, ITEM_JSON]
         mock_fetch_html.return_value = ['<a href="some_other_dir/">other</a>']
@@ -43,7 +44,7 @@ class TestResolveTestLogDirectory:
             _resolve_test_log_directory("12345", "67890", "key", "https://rp.example.com")
 
     @patch(f"{MODULE}._fetch_html_lines")
-    @patch(f"{MODULE}._fetch_json")
+    @patch(f"{RP_MODULE}._fetch_json")
     def test_test_not_found_in_any_dir(self, mock_fetch_json, mock_fetch_html):
         mock_fetch_json.side_effect = [LAUNCH_JSON, ITEM_JSON]
         mock_fetch_html.side_effect = [ROOT_DIR_HTML_LINES, NO_MATCH_HTML_LINES, NO_MATCH_HTML_LINES]
@@ -52,7 +53,7 @@ class TestResolveTestLogDirectory:
             _resolve_test_log_directory("12345", "67890", "key", "https://rp.example.com")
 
     @patch(f"{MODULE}._fetch_html_lines")
-    @patch(f"{MODULE}._fetch_json")
+    @patch(f"{RP_MODULE}._fetch_json")
     def test_bad_description_format(self, mock_fetch_json, mock_fetch_html):
         bad_launch = {"content": [{"description": "No logs URL here"}]}
         mock_fetch_json.side_effect = [bad_launch, ITEM_JSON]
@@ -61,7 +62,7 @@ class TestResolveTestLogDirectory:
             _resolve_test_log_directory("12345", "67890", "key", "https://rp.example.com")
 
     @patch(f"{MODULE}._fetch_html_lines")
-    @patch(f"{MODULE}._fetch_json")
+    @patch(f"{RP_MODULE}._fetch_json")
     def test_searches_multiple_dirs(self, mock_fetch_json, mock_fetch_html):
         mock_fetch_json.side_effect = [LAUNCH_JSON, ITEM_JSON]
         mock_fetch_html.side_effect = [

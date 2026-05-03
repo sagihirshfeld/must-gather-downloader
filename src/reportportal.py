@@ -88,6 +88,60 @@ def _extract_hrefs(lines: list[str]) -> list[str]:
     return hrefs
 
 
+def _resolve_magna_metadata(launch_id: str, test_item_id: str, api_key: str, base_url: str) -> dict:
+    """Resolve Magna base URL and test name from ReportPortal IDs.
+
+    Queries the RP API concurrently for launch description and test item
+    name, then extracts the Magna logs URL root and cluster name from the
+    launch description.
+
+    Args:
+        launch_id: ReportPortal launch ID.
+        test_item_id: ReportPortal test item ID.
+        api_key: Bearer token for RP API.
+        base_url: ReportPortal base URL (without trailing slash).
+
+    Returns:
+        Dict with keys: logs_url_root, cluster_name, test_name,
+        launch_id, test_item_id.
+
+    Raises:
+        ValueError: If description or name fields are missing or the
+            Magna URL cannot be parsed.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    from .config import RP_PROJECT
+
+    rp_api = f"{base_url}/api/v1/{RP_PROJECT}"
+    launch_api = f"{rp_api}/launch?filter.eq.id={launch_id}"
+    item_api = f"{rp_api}/item/{test_item_id}"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        launch_future = pool.submit(_fetch_json, launch_api, api_key)
+        item_future = pool.submit(_fetch_json, item_api, api_key)
+        launch_json = launch_future.result()
+        item_json = item_future.result()
+
+    try:
+        description = launch_json["content"][0]["description"]
+        logs_url_root = description.split("Logs URL:")[1].strip().split()[0]
+        cluster_name = logs_url_root.split("openshift-clusters/")[1].split("/")[0]
+        test_name = item_json["name"]
+    except (KeyError, IndexError) as e:
+        raise ValueError(
+            f"Could not extract Magna logs location from ReportPortal. Missing description or name field: {e}"
+        )
+
+    return {
+        "logs_url_root": logs_url_root,
+        "cluster_name": cluster_name,
+        "test_name": test_name,
+        "launch_id": launch_id,
+        "test_item_id": test_item_id,
+    }
+
+
 def _safe_test_name(test_name: str) -> str:
     """URL-encode a test name for use in Magna directory paths."""
     safe = f"{test_name}_ocs_logs"

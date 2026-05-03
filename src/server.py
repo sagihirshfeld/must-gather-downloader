@@ -3,6 +3,7 @@ from fastmcp import FastMCP
 from .cache import list_must_gather_cache as _list_cache_impl
 from .download import download_must_gather as _download_impl
 from .noobaa import get_noobaa_resource as _get_noobaa_impl
+from .ocs_ci_logs import get_ocs_ci_test_log as _ocs_ci_log_impl
 from .pod_logs import get_must_gather_pod_logs as _pod_logs_impl
 from .pod_logs import search_pod_logs as _search_pod_logs_impl
 from .resources import get_must_gather_resource as _get_resource_impl
@@ -255,6 +256,48 @@ def search_pod_logs(
         time_from,
         time_to,
     )
+
+
+@mcp.tool
+def get_ocs_ci_test_log(
+    reportportal_url: str,
+    test_name: str,
+    exclude_debug: bool = True,
+    tail: int = 0,
+    head: int = 0,
+) -> str:
+    """Retrieve OCS-CI per-test debug log from a ReportPortal launch.
+
+    Given a ReportPortal URL and test name, resolves the Magna logs
+    directory, finds the ocs-ci-logs per-test log file, and returns
+    its content with optional filtering.
+
+    These logs contain DEBUG-level output including full YAML dumps
+    from 'oc get' commands. By default, DEBUG lines are filtered out
+    to save tokens. Set exclude_debug=False when you need to examine:
+    - Full 'oc get' command output (Pod specs, StorageCluster YAML)
+    - Resource configuration details and return codes
+    - Ceph internal status dumps and OSD diagnostics
+    - Command stdout/stderr content for troubleshooting
+
+    With filtering on (default), only INFO, WARNING, ERROR, and custom
+    OCS-CI levels (TEST_STEP, ASSERTION) are returned.
+
+    Args:
+        reportportal_url: Full ReportPortal URL to a test log page
+            (must contain '/launches/' and '/log')
+        test_name: Test function name, e.g.
+            'test_bucket_notifications[default-logs-pvc]'.
+            Supports partial/substring matching against directory names.
+        exclude_debug: Filter out DEBUG-level log lines (default True)
+        tail: Return only the last N lines after filtering (0 = all)
+        head: Return only the first N lines after filtering (0 = all)
+
+    Returns:
+        JSON string with test log content and metadata including
+        line counts and truncation info
+    """
+    return _ocs_ci_log_impl(reportportal_url, test_name, exclude_debug, tail, head)
 
 
 def main():
