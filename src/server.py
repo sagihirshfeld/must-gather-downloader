@@ -1,5 +1,6 @@
 from fastmcp import FastMCP
 
+from .ai_analysis import get_ai_analysis_report as _ai_analysis_impl
 from .cache import list_must_gather_cache as _list_cache_impl
 from .download import download_must_gather as _download_impl
 from .noobaa import get_noobaa_resource as _get_noobaa_impl
@@ -311,6 +312,45 @@ def get_ocs_ci_test_log(
         line counts and truncation info
     """
     return _ocs_ci_log_impl(reportportal_url, test_name, tail, head)
+
+
+@mcp.tool
+def get_ai_analysis_report(
+    reportportal_url: str,
+    test_name: str,
+    include_traceback: bool = True,
+    include_suggested_fix: bool = True,
+) -> str:
+    """Retrieve AI failure analysis for a test from the AI analysis report.
+
+    Use this to get automated root-cause analysis, recommended actions,
+    evidence, and suggested code fixes for test failures. The AI analysis
+    report is generated per run and contains structured failure analysis
+    for each failed test. This is different from:
+    - must-gather tools (raw cluster state at failure time)
+    - get_ocs_ci_test_log (step-by-step test execution trace)
+    - ReportPortal logs (failure summary and stack traces)
+
+    Given a ReportPortal URL and test name, resolves the Magna logs
+    directory, finds the AI analysis report HTML, and extracts the
+    failure analysis for the requested test.
+
+    Args:
+        reportportal_url: Full ReportPortal URL to a test log page
+            (must contain '/launches/' and '/log')
+        test_name: Test function name, e.g.
+            'test_bucket_notifications[default-logs-pvc]'.
+            Matched as a substring against failure card titles.
+        include_traceback: Include the traceback in results (default True)
+        include_suggested_fix: Include the suggested fix or bug details
+            in results (default True)
+
+    Returns:
+        JSON string with failure analysis data including root_cause,
+        recommended_action, evidence, confidence, and optionally
+        traceback and suggested_fix or bug_details
+    """
+    return _ai_analysis_impl(reportportal_url, test_name, include_traceback, include_suggested_fix)
 
 
 def main():
