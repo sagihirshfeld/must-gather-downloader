@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .navigate import _find_must_gather_root
+from .resource_utils import truncate_log_from_tail
 from .search import _MAX_LINE_LENGTH
-from .text import MAX_LOG_SIZE, _extract_time_str, _filter_log_by_time, _normalize_time
+from .text import _extract_time_str, _filter_log_by_time, _normalize_time
 
 
 @dataclass
@@ -140,29 +141,11 @@ def get_must_gather_pod_logs(
 
     for lf in log_files:
         content = lf.path.read_text(encoding="utf-8", errors="replace")
-        truncated = False
 
         if time_from or time_to:
             content, _total, _matched = _filter_log_by_time(content, time_from, time_to)
 
-        if tail > 0:
-            lines = content.splitlines()
-            content = "\n".join(lines[-tail:])
-            if lines[-tail:]:
-                content += "\n"
-        elif len(content.encode("utf-8", errors="replace")) > MAX_LOG_SIZE:
-            lines = content.splitlines()
-            kept = []
-            size = 0
-            for line in reversed(lines):
-                line_size = len(line.encode("utf-8", errors="replace")) + 1
-                if size + line_size > MAX_LOG_SIZE:
-                    break
-                kept.append(line)
-                size += line_size
-            kept.reverse()
-            content = "\n".join(kept) + "\n"
-            truncated = True
+        content, truncated = truncate_log_from_tail(content, tail)
 
         line_count = len(content.splitlines())
         logs.append(
