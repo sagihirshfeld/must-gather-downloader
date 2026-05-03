@@ -17,13 +17,16 @@ mcp = FastMCP("must-gather")
 def download_must_gather(reportportal_url: str, force_redownload: bool = False) -> str:
     """Download and extract must-gather logs from a ReportPortal test failure.
 
-    Given a ReportPortal test log page URL, this tool:
-    1. Resolves the corresponding Magna logs directory
-    2. Finds and downloads the must-gather tarball
-    3. Extracts it locally for analysis
+    Use this when ReportPortal logs alone don't explain the failure and you
+    need cluster state -- pod logs, Kubernetes resources, Ceph status, or
+    NooBaa data. Must-gather is a cluster snapshot, not the test execution
+    trace (use get_ocs_ci_test_log for that).
 
-    Results are cached by test item ID. Repeat calls return the cached path
-    instantly unless force_redownload is True.
+    Given a ReportPortal test log page URL, this tool resolves the
+    corresponding Magna logs directory, finds and downloads the must-gather
+    tarball, and extracts it locally. Results are cached by test item ID;
+    repeat calls return the cached path instantly unless force_redownload
+    is True.
 
     Args:
         reportportal_url: Full ReportPortal URL to a test log page
@@ -79,11 +82,15 @@ def get_must_gather_resource(
     namespace: str = "",
     tail: int = 0,
 ) -> str:
-    """Retrieve a specific resource from a must-gather extraction.
+    """Retrieve a Kubernetes resource or Ceph command output from a must-gather.
 
-    Maps logical resource names to their file paths within the must-gather
-    directory structure and returns their content. Kubernetes YAML resources
-    are automatically cleaned (managedFields stripped) for readability.
+    Use this for cluster-scoped resources (nodes, PVs, StorageClasses),
+    namespaced resources (pods, events, configmaps, deployments), and Ceph
+    data (ceph status, OSD tree). For NooBaa-specific resources (diagnostics,
+    NooBaa logs, CNPG info, NooBaa CLI status), use get_noobaa_resource
+    instead. For pod logs, use get_must_gather_pod_logs or search_pod_logs.
+
+    YAML resources are automatically cleaned (managedFields stripped).
 
     Args:
         must_gather_path: Path to the extracted must-gather directory
@@ -113,9 +120,12 @@ def get_noobaa_resource(
 ) -> str:
     """Retrieve a resource from the NooBaa subtree of a must-gather extraction.
 
-    Accesses NooBaa-specific data that lives under the noobaa/ directory,
-    including CLI status output, diagnostics tarballs, NooBaa-specific logs,
-    CNPG database info, and NooBaa CRD resources.
+    Use when the failure involves object storage, buckets, backingstores,
+    or namespacestores. Accesses NooBaa-specific data: CLI status output,
+    diagnostics tarballs, NooBaa operator logs, CNPG database info, and
+    NooBaa CRD resources (backingstores, namespacestores, bucketclasses,
+    OBCs). For general Kubernetes resources or Ceph data, use
+    get_must_gather_resource instead.
 
     Args:
         must_gather_path: Path to the extracted must-gather directory
@@ -145,10 +155,15 @@ def search_must_gather(
     max_results: int = 50,
     case_sensitive: bool = False,
 ) -> str:
-    """Search through must-gather files for a pattern (grep-like).
+    """Search through all must-gather files for a pattern (grep-like).
 
-    Searches text files in a must-gather extraction for lines matching a
-    regex or literal pattern. Binary files are automatically skipped.
+    Use for broad searches across the entire must-gather -- YAML resources,
+    Ceph outputs, config files, and logs alike. To search only within pod
+    logs (with pod/container scoping and context lines), use search_pod_logs
+    instead.
+
+    Searches text files for lines matching a regex or literal pattern.
+    Binary files are automatically skipped.
 
     Args:
         must_gather_path: Path to an extracted must-gather directory
@@ -174,10 +189,14 @@ def get_must_gather_pod_logs(
     time_from: str = "",
     time_to: str = "",
 ) -> str:
-    """Retrieve pod logs from a must-gather extraction.
+    """Retrieve full pod log content from a must-gather extraction.
 
-    Navigates the must-gather directory structure to find and return pod logs.
-    Can list available pods in a namespace, or retrieve logs for a specific
+    Use when you need to read complete pod logs or list available pods in a
+    namespace. If you already know what pattern to look for, use
+    search_pod_logs instead -- it returns only matching lines with context,
+    which uses fewer tokens.
+
+    Can list available pods (omit pod_name), or retrieve logs for a specific
     pod with optional container, tail, and time-range filtering.
 
     Args:
@@ -268,9 +287,12 @@ def get_ocs_ci_test_log(
 ) -> str:
     """Retrieve OCS-CI per-test debug log from a ReportPortal launch.
 
-    Given a ReportPortal URL and test name, resolves the Magna logs
-    directory, finds the ocs-ci-logs per-test log file, and returns
-    its content with optional filtering.
+    Use this to see the test execution trace -- what the test framework did
+    step by step, including setup, teardown, assertions, and oc commands.
+    This is different from must-gather tools (which show cluster state at
+    failure time) and ReportPortal logs (which show the failure summary).
+    Does not require downloading a must-gather first; fetches directly
+    from Magna.
 
     These logs contain DEBUG-level output including full YAML dumps
     from 'oc get' commands. By default, DEBUG lines are filtered out
