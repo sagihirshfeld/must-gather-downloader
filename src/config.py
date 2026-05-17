@@ -25,6 +25,15 @@ def _ssl_verify() -> bool | str:
     return val
 
 
+def _get_cache_dir() -> Path:
+    """Return the must-gather cache directory from environment.
+
+    Defaults to ``/tmp/must-gather-cache`` when ``MUST_GATHER_CACHE_DIR``
+    is not set.
+    """
+    return Path(os.environ.get("MUST_GATHER_CACHE_DIR", "/tmp/must-gather-cache"))
+
+
 def _get_config():
     """Read configuration from environment variables.
 
@@ -36,7 +45,7 @@ def _get_config():
     """
     api_key = os.environ.get("RP_API_KEY", "")
     base_url = os.environ.get("RP_BASE_URL", "").strip().strip("\"'").rstrip("/")
-    cache_dir = Path(os.environ.get("MUST_GATHER_CACHE_DIR", "/tmp/must-gather-cache"))
+    cache_dir = _get_cache_dir()
     if not api_key or not base_url:
         raise ValueError(
             "RP_API_KEY and RP_BASE_URL environment variables are required. Configure them in your MCP server settings."

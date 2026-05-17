@@ -1,4 +1,5 @@
 import fcntl
+import hashlib
 import json
 import shutil
 import tarfile
@@ -10,7 +11,7 @@ from urllib.parse import unquote
 import requests
 
 from .cache import _cache_check
-from .config import _get_config, _ssl_verify
+from .config import _get_cache_dir, _get_config, _ssl_verify
 from .navigate import _count_files, _count_files_and_size
 from .reportportal import (
     _extract_hrefs,
@@ -237,6 +238,101 @@ def download_must_gather(reportportal_url: str, force_redownload: bool = False) 
                     "test_name": info["test_name"],
                     "cluster_name": info["cluster_name"],
                     "tarball_url": tarball_url,
+                    "cached": False,
+                    "files_count": files_count,
+                }
+            )
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+
+
+def extract_local_must_gather(tarball_path: str, force_re_extract: bool = False) -> str:
+    """Extract a local must-gather tarball into the cache.
+
+    Handles caching so repeated calls with the same tarball path return
+    the cached extraction instantly.  Uses file locking for concurrent
+    safety.
+
+    Args:
+        tarball_path: Path to a local must-gather tarball (.tar.gz, .tgz,
+            or .tar).
+        force_re_extract: If True, bypass cache and re-extract.
+
+    Returns:
+        JSON string with path, source_tarball, cached flag, and
+        files_count.
+
+    Raises:
+        ValueError: If the tarball path doesn't exist, is not a file,
+            or is not a valid tarball.
+    """
+    source = Path(tarball_path).resolve()
+    if not source.exists():
+        raise ValueError(f"Tarball does not exist: {tarball_path}")
+    if not source.is_file():
+        raise ValueError(f"Path is not a file: {tarball_path}")
+
+    cache_dir = _get_cache_dir()
+    cache_key = "local-" + hashlib.sha256(str(source).encode()).hexdigest()[:16]
+    cache_entry = cache_dir / cache_key
+    cache_entry.mkdir(parents=True, exist_ok=True)
+
+    if not force_re_extract:
+        metadata = _cache_check(cache_entry)
+        if metadata:
+            extracted = cache_entry / "extracted"
+            return json.dumps(
+                {
+                    "path": str(extracted),
+                    "source_tarball": metadata["source_tarball"],
+                    "cached": True,
+                    "files_count": metadata.get("files_count") or _count_files(extracted),
+                }
+            )
+
+    lock_path = cache_entry / ".lock"
+    with open(lock_path, "w") as lock_fd:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        try:
+            if not force_re_extract:
+                metadata = _cache_check(cache_entry)
+                if metadata:
+                    extracted = cache_entry / "extracted"
+                    return json.dumps(
+                        {
+                            "path": str(extracted),
+                            "source_tarball": metadata["source_tarball"],
+                            "cached": True,
+                            "files_count": metadata.get("files_count") or _count_files(extracted),
+                        }
+                    )
+
+            extracted_dir = cache_entry / "extracted"
+            if force_re_extract and extracted_dir.exists():
+                shutil.rmtree(extracted_dir)
+
+            try:
+                _extract_tarball(source, extracted_dir)
+            except tarfile.TarError as exc:
+                if extracted_dir.exists():
+                    shutil.rmtree(extracted_dir)
+                raise ValueError(f"Failed to extract tarball (not a valid tar archive): {exc}") from exc
+
+            files_count, size_bytes = _count_files_and_size(extracted_dir)
+
+            metadata = {
+                "source_tarball": str(source),
+                "extracted_at": datetime.now(timezone.utc).isoformat(),
+                "files_count": files_count,
+                "size_bytes": size_bytes,
+            }
+            with open(cache_entry / "metadata.json", "w") as f:
+                json.dump(metadata, f, indent=2)
+
+            return json.dumps(
+                {
+                    "path": str(extracted_dir),
+                    "source_tarball": str(source),
                     "cached": False,
                     "files_count": files_count,
                 }

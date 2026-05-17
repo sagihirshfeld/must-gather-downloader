@@ -2,6 +2,7 @@ from fastmcp import FastMCP
 
 from .ai_analysis import get_ai_analysis_report as _ai_analysis_impl
 from .download import download_must_gather as _download_impl
+from .download import extract_local_must_gather as _extract_local_impl
 from .ocs_ci_logs import get_ocs_ci_test_log as _ocs_ci_log_impl
 from .pod_logs import get_must_gather_pod_logs as _pod_logs_impl
 from .resources import get_must_gather_resource as _get_resource_impl
@@ -36,6 +37,31 @@ def download_must_gather(reportportal_url: str, force_redownload: bool = False) 
         cached (bool), and files_count
     """
     return _download_impl(reportportal_url, force_redownload)
+
+
+@mcp.tool
+def extract_local_must_gather(tarball_path: str, force_re_extract: bool = False) -> str:
+    """Extract a local must-gather tarball for analysis.
+
+    Use this when you already have a must-gather tarball on disk and
+    don't need to download it from ReportPortal. The tarball is
+    extracted into the cache so the analysis tools
+    (list_must_gather_contents, get_must_gather_resource, etc.) can be
+    used on the result path.
+
+    Results are cached by tarball path; repeat calls return the cached
+    extraction instantly unless force_re_extract is True.
+
+    Args:
+        tarball_path: Absolute path to a local must-gather tarball
+            (.tar.gz, .tgz, or .tar)
+        force_re_extract: If True, bypass cache and re-extract
+
+    Returns:
+        JSON string with path (to use with other tools),
+        source_tarball, cached (bool), and files_count
+    """
+    return _extract_local_impl(tarball_path, force_re_extract)
 
 
 @mcp.tool

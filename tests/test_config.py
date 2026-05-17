@@ -2,7 +2,17 @@ import logging
 from pathlib import Path
 
 import pytest
-from must_gather_downloader.config import _get_config, _ssl_verify
+from must_gather_downloader.config import _get_cache_dir, _get_config, _ssl_verify
+
+
+class TestGetCacheDir:
+    def test_default(self, monkeypatch):
+        monkeypatch.delenv("MUST_GATHER_CACHE_DIR", raising=False)
+        assert _get_cache_dir() == Path("/tmp/must-gather-cache")
+
+    def test_custom(self, monkeypatch):
+        monkeypatch.setenv("MUST_GATHER_CACHE_DIR", "/custom/cache")
+        assert _get_cache_dir() == Path("/custom/cache")
 
 
 class TestGetConfig:
