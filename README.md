@@ -7,6 +7,7 @@ Given a ReportPortal test log URL, it resolves the corresponding Magna logs dire
 ## Features
 
 - **Single tool call**: paste a ReportPortal URL, get extracted must-gather logs
+- **Local tarball support**: extract must-gather tarballs from disk without ReportPortal credentials
 - **Smart caching**: repeat calls return instantly; no double downloads
 - **Parallel safe**: multiple downloads run concurrently without conflicts (file-based locking prevents races on the same test)
 - **Resource retrieval**: read Kubernetes resources, Ceph outputs, and NooBaa data directly from the must-gather
@@ -42,10 +43,12 @@ Restart Claude Code after running this. The server starts automatically on every
 
 | Variable | Required | Description |
 |---|---|---|
-| `RP_API_KEY` | Yes | ReportPortal Bearer token (Profile > API Keys) |
-| `RP_BASE_URL` | Yes | ReportPortal instance URL, no trailing slash |
+| `RP_API_KEY` | Yes* | ReportPortal Bearer token (Profile > API Keys) |
+| `RP_BASE_URL` | Yes* | ReportPortal instance URL, no trailing slash |
 | `MUST_GATHER_CACHE_DIR` | No | Override cache directory (default: `/tmp/must-gather-cache`) |
 | `RP_SSL_VERIFY` | No | SSL verification: `true` (default), `false`, or path to CA bundle |
+
+\* Not needed for `extract_local_must_gather`.
 
 ## Tools
 
@@ -61,6 +64,17 @@ Download and extract must-gather logs from a ReportPortal test failure.
 | `force_redownload` | No | Bypass cache and re-download (default: `false`) |
 
 **Returns:** `path`, `test_name`, `cluster_name`, `tarball_url`, `cached`, `files_count`
+
+#### `extract_local_must_gather`
+
+Extract a local must-gather tarball for analysis. Use this when you already have a tarball on disk and don't need to download from ReportPortal. No RP credentials required.
+
+| Parameter | Required | Description |
+|---|---|---|
+| `tarball_path` | Yes | Absolute path to a local must-gather tarball (`.tar.gz`, `.tgz`, or `.tar`) |
+| `force_re_extract` | No | Bypass cache and re-extract (default: `false`) |
+
+**Returns:** `path`, `source_tarball`, `cached`, `files_count`
 
 #### `list_must_gather_contents`
 
@@ -148,11 +162,14 @@ Retrieve automated AI failure analysis for a test — root cause, recommended ac
 
 ```
 /tmp/must-gather-cache/
-├── {test_item_id}/
-│   ├── .lock              # prevents parallel double-downloads
-│   ├── metadata.json      # test name, cluster, tarball URL, timestamp
-│   ├── *.tar.gz           # original tarball (kept for re-use)
-│   └── extracted/         # extracted must-gather contents
+├── {test_item_id}/              # from download_must_gather (RP)
+│   ├── .lock                    # prevents parallel double-downloads
+│   ├── metadata.json            # test name, cluster, tarball URL, timestamp
+│   ├── *.tar.gz                 # original tarball (kept for re-use)
+│   └── extracted/               # extracted must-gather contents
+├── local-{sha256_prefix}/       # from extract_local_must_gather
+│   ├── metadata.json
+│   └── extracted/
 ```
 
 Cache lives under `/tmp` and is cleared on reboot. Override with `MUST_GATHER_CACHE_DIR`.
