@@ -2,7 +2,6 @@ import json
 
 import pytest
 from must_gather_downloader.navigate import _count_files_and_size, _find_must_gather_root
-from must_gather_downloader.noobaa import get_noobaa_resource
 from must_gather_downloader.pod_logs import get_must_gather_pod_logs
 from must_gather_downloader.resources import get_must_gather_resource, list_must_gather_contents
 from must_gather_downloader.search import search_must_gather
@@ -529,31 +528,33 @@ class TestGetMustGatherResource:
 
 class TestGetNoobaaResource:
     def test_noobaa_status(self, must_gather_tree):
-        result = json.loads(get_noobaa_resource(str(must_gather_tree["extracted"]), "status"))
+        result = json.loads(get_must_gather_resource(str(must_gather_tree["extracted"]), "status"))
         assert result["resource_type"] == "status"
         assert "system-address" in result["content"]
         assert "backing-stores" in result["content"]
 
     def test_noobaa_db_list(self, must_gather_tree):
-        result = json.loads(get_noobaa_resource(str(must_gather_tree["extracted"]), "db_list"))
+        result = json.loads(get_must_gather_resource(str(must_gather_tree["extracted"]), "db_list"))
         assert result["resource_type"] == "db_list"
         assert "nbcore" in result["content"]
 
     def test_noobaa_logs_list(self, must_gather_tree):
-        result = json.loads(get_noobaa_resource(str(must_gather_tree["extracted"]), "logs"))
+        result = json.loads(get_must_gather_resource(str(must_gather_tree["extracted"]), "logs"))
         assert result["resource_type"] == "logs"
         assert "noobaa_endpoint.log" in result["available_logs"]
         assert "noobaa_operator.log" in result["available_logs"]
 
     def test_noobaa_logs_read(self, must_gather_tree):
-        result = json.loads(get_noobaa_resource(str(must_gather_tree["extracted"]), "logs", name="noobaa_endpoint.log"))
+        result = json.loads(
+            get_must_gather_resource(str(must_gather_tree["extracted"]), "logs", name="noobaa_endpoint.log")
+        )
         assert result["resource_type"] == "logs"
         assert "endpoint started" in result["content"]
         assert result["lines"] == 3
 
     def test_noobaa_logs_tail(self, must_gather_tree):
         result = json.loads(
-            get_noobaa_resource(
+            get_must_gather_resource(
                 str(must_gather_tree["extracted"]),
                 "logs",
                 name="noobaa_endpoint.log",
@@ -564,30 +565,34 @@ class TestGetNoobaaResource:
         assert "endpoint stopped" in result["content"]
 
     def test_noobaa_logs_not_found(self, must_gather_tree):
-        result = json.loads(get_noobaa_resource(str(must_gather_tree["extracted"]), "logs", name="nonexistent.log"))
+        result = json.loads(
+            get_must_gather_resource(str(must_gather_tree["extracted"]), "logs", name="nonexistent.log")
+        )
         assert "error" in result
         assert "available_logs" in result
 
     def test_noobaa_cnpg_list(self, must_gather_tree):
-        result = json.loads(get_noobaa_resource(str(must_gather_tree["extracted"]), "cnpg"))
+        result = json.loads(get_must_gather_resource(str(must_gather_tree["extracted"]), "cnpg"))
         assert result["resource_type"] == "cnpg"
         assert "pg_stat_statements" in result["available_files"]
         assert "cnpg_cluster_status" in result["available_files"]
 
     def test_noobaa_cnpg_read(self, must_gather_tree):
-        result = json.loads(get_noobaa_resource(str(must_gather_tree["extracted"]), "cnpg", name="pg_stat_statements"))
+        result = json.loads(
+            get_must_gather_resource(str(must_gather_tree["extracted"]), "cnpg", name="pg_stat_statements")
+        )
         assert result["resource_type"] == "cnpg"
         assert "SELECT 1" in result["content"]
 
     def test_noobaa_diagnostics_list(self, must_gather_tree):
-        result = json.loads(get_noobaa_resource(str(must_gather_tree["extracted"]), "diagnostics"))
+        result = json.loads(get_must_gather_resource(str(must_gather_tree["extracted"]), "diagnostics"))
         assert result["resource_type"] == "diagnostics"
         assert "noobaa_core_describe.txt" in result["available_files"]
         assert "noobaa_db_dump.json" in result["available_files"]
 
     def test_noobaa_diagnostics_read(self, must_gather_tree):
         result = json.loads(
-            get_noobaa_resource(
+            get_must_gather_resource(
                 str(must_gather_tree["extracted"]),
                 "diagnostics",
                 name="noobaa_core_describe.txt",
@@ -597,16 +602,16 @@ class TestGetNoobaaResource:
         assert "pod describe output" in result["content"]
 
     def test_noobaa_diagnostics_cached(self, must_gather_tree):
-        get_noobaa_resource(str(must_gather_tree["extracted"]), "diagnostics")
+        get_must_gather_resource(str(must_gather_tree["extracted"]), "diagnostics")
         extract_dir = must_gather_tree["root"] / "noobaa" / "raw_output" / ".diagnostics_extracted"
         assert extract_dir.is_dir()
         mtime_before = extract_dir.stat().st_mtime
-        get_noobaa_resource(str(must_gather_tree["extracted"]), "diagnostics")
+        get_must_gather_resource(str(must_gather_tree["extracted"]), "diagnostics")
         assert extract_dir.stat().st_mtime == mtime_before
 
     def test_noobaa_diagnostics_tail(self, must_gather_tree):
         result = json.loads(
-            get_noobaa_resource(
+            get_must_gather_resource(
                 str(must_gather_tree["extracted"]),
                 "diagnostics",
                 name="noobaa-core-0-core.log",
@@ -621,17 +626,20 @@ class TestGetNoobaaResource:
         assert result["truncated"] is False
 
     def test_noobaa_diagnostics_file_not_found(self, must_gather_tree):
-        result = json.loads(get_noobaa_resource(str(must_gather_tree["extracted"]), "diagnostics", name="nonexistent"))
+        result = json.loads(
+            get_must_gather_resource(str(must_gather_tree["extracted"]), "diagnostics", name="nonexistent")
+        )
         assert "error" in result
         assert "available_files" in result
 
     def test_noobaa_backingstore(self, must_gather_tree):
         result = json.loads(
-            get_noobaa_resource(
+            get_must_gather_resource(
                 str(must_gather_tree["extracted"]),
                 "bs",
                 name="noobaa-default-backing-store",
                 namespace="openshift-storage",
+                subtree="noobaa",
             )
         )
         assert result["resource_type"] == "backingstore"
@@ -639,11 +647,12 @@ class TestGetNoobaaResource:
 
     def test_noobaa_objectbucketclaim(self, must_gather_tree):
         result = json.loads(
-            get_noobaa_resource(
+            get_must_gather_resource(
                 str(must_gather_tree["extracted"]),
                 "obc",
                 name="my-obc",
                 namespace="openshift-storage",
+                subtree="noobaa",
             )
         )
         assert result["resource_type"] == "objectbucketclaim"
@@ -651,10 +660,11 @@ class TestGetNoobaaResource:
 
     def test_noobaa_objectbucket_cluster_scoped(self, must_gather_tree):
         result = json.loads(
-            get_noobaa_resource(
+            get_must_gather_resource(
                 str(must_gather_tree["extracted"]),
                 "ob",
                 name="obc-ns-my-obc",
+                subtree="noobaa",
             )
         )
         assert result["resource_type"] == "objectbucket"
@@ -662,9 +672,10 @@ class TestGetNoobaaResource:
 
     def test_noobaa_namespaced_requires_namespace(self, must_gather_tree):
         result = json.loads(
-            get_noobaa_resource(
+            get_must_gather_resource(
                 str(must_gather_tree["extracted"]),
                 "backingstore",
+                subtree="noobaa",
             )
         )
         assert "error" in result
@@ -674,17 +685,18 @@ class TestGetNoobaaResource:
         root = tmp_path / "extracted" / "must-gather"
         ns = root / "namespaces" / "default"
         ns.mkdir(parents=True)
-        result = json.loads(get_noobaa_resource(str(tmp_path / "extracted"), "status"))
+        result = json.loads(get_must_gather_resource(str(tmp_path / "extracted"), "status"))
         assert "error" in result
         assert "noobaa" in result["error"].lower()
 
     def test_noobaa_namespacestore(self, must_gather_tree):
         result = json.loads(
-            get_noobaa_resource(
+            get_must_gather_resource(
                 str(must_gather_tree["extracted"]),
                 "ns_store",
                 name="my-ns-store",
                 namespace="openshift-storage",
+                subtree="noobaa",
             )
         )
         assert result["resource_type"] == "namespacestore"
@@ -692,11 +704,12 @@ class TestGetNoobaaResource:
 
     def test_noobaa_bucketclass(self, must_gather_tree):
         result = json.loads(
-            get_noobaa_resource(
+            get_must_gather_resource(
                 str(must_gather_tree["extracted"]),
                 "bc",
                 name="noobaa-default-bucket-class",
                 namespace="openshift-storage",
+                subtree="noobaa",
             )
         )
         assert result["resource_type"] == "bucketclass"
@@ -704,27 +717,125 @@ class TestGetNoobaaResource:
 
     def test_noobaa_cr(self, must_gather_tree):
         result = json.loads(
-            get_noobaa_resource(
+            get_must_gather_resource(
                 str(must_gather_tree["extracted"]),
                 "noobaa",
                 name="noobaa",
                 namespace="openshift-storage",
+                subtree="noobaa",
             )
         )
         assert result["resource_type"] == "noobaa"
         assert "NooBaa" in result["content"]
 
-    def test_unknown_noobaa_resource_type(self, must_gather_tree):
-        result = json.loads(get_noobaa_resource(str(must_gather_tree["extracted"]), "nonexistent"))
-        assert "error" in result
-        assert "supported_types" in result
-
     def test_noobaa_large_file_truncation(self, must_gather_tree):
         status_file = must_gather_tree["root"] / "noobaa" / "raw_output" / "status"
         status_file.write_text("x" * 200_000)
-        result = json.loads(get_noobaa_resource(str(must_gather_tree["extracted"]), "status"))
+        result = json.loads(get_must_gather_resource(str(must_gather_tree["extracted"]), "status"))
         assert result["truncated"] is True
         assert result["total_size_bytes"] == 200_000
+
+
+class TestSubtreeParameter:
+    def test_subtree_auto_prefers_noobaa_for_dual_types(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]),
+                "bs",
+                name="noobaa-default-backing-store",
+                namespace="openshift-storage",
+            )
+        )
+        assert result["resource_type"] == "backingstore"
+        assert "BackingStore" in result["content"]
+
+    def test_subtree_main_forces_main(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]),
+                "bs",
+                name="noobaa-default-backing-store",
+                namespace="openshift-storage",
+                subtree="main",
+            )
+        )
+        assert result["resource_type"] == "backingstore"
+        assert "BackingStore" in result["content"]
+
+    def test_subtree_noobaa_forces_noobaa(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]),
+                "bs",
+                name="noobaa-default-backing-store",
+                namespace="openshift-storage",
+                subtree="noobaa",
+            )
+        )
+        assert result["resource_type"] == "backingstore"
+        assert "BackingStore" in result["content"]
+
+    def test_subtree_main_for_noobaa_only_type_errors(self, must_gather_tree):
+        result = json.loads(get_must_gather_resource(str(must_gather_tree["extracted"]), "status", subtree="main"))
+        assert "error" in result
+        assert "noobaa subtree" in result["error"]
+
+    def test_subtree_noobaa_for_ceph_type_errors(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(str(must_gather_tree["extracted"]), "cephstatus", subtree="noobaa")
+        )
+        assert "error" in result
+        assert "noobaa subtree" in result["error"]
+
+    def test_subtree_noobaa_for_generic_ceph_errors(self, must_gather_tree):
+        result = json.loads(get_must_gather_resource(str(must_gather_tree["extracted"]), "ceph", subtree="noobaa"))
+        assert "error" in result
+        assert "noobaa subtree" in result["error"]
+
+    def test_subtree_invalid_value(self, must_gather_tree):
+        result = json.loads(get_must_gather_resource(str(must_gather_tree["extracted"]), "node", subtree="invalid"))
+        assert "error" in result
+        assert "Invalid subtree" in result["error"]
+        assert "valid_values" in result
+
+    def test_subtree_auto_falls_back_when_noobaa_missing(self, tmp_path):
+        root = tmp_path / "extracted" / "must-gather"
+        ns_dir = root / "namespaces" / "openshift-storage" / "noobaa.io" / "backingstores"
+        ns_dir.mkdir(parents=True)
+        (ns_dir / "my-bs.yaml").write_text("kind: BackingStore\nname: my-bs")
+        result = json.loads(
+            get_must_gather_resource(
+                str(tmp_path / "extracted"),
+                "bs",
+                name="my-bs",
+                namespace="openshift-storage",
+            )
+        )
+        assert result["resource_type"] == "backingstore"
+        assert "BackingStore" in result["content"]
+
+    def test_subtree_noobaa_for_main_only_type_errors(self, must_gather_tree):
+        result = json.loads(get_must_gather_resource(str(must_gather_tree["extracted"]), "node", subtree="noobaa"))
+        assert "error" in result
+        assert "not available in the noobaa subtree" in result["error"]
+
+    def test_subtree_noobaa_for_events_errors(self, must_gather_tree):
+        result = json.loads(
+            get_must_gather_resource(
+                str(must_gather_tree["extracted"]),
+                "events",
+                namespace="openshift-storage",
+                subtree="noobaa",
+            )
+        )
+        assert "error" in result
+        assert "noobaa subtree" in result["error"]
+
+    def test_noobaa_only_types_in_supported_types(self, must_gather_tree):
+        result = json.loads(get_must_gather_resource(str(must_gather_tree["extracted"]), "foobar"))
+        supported = result["supported_types"]
+        for rt in ["status", "db_list", "diagnostics", "logs", "cnpg"]:
+            assert rt in supported
 
 
 class TestSearchMustGather:
@@ -1125,9 +1236,9 @@ class TestPathTraversalGuards:
 
     def test_noobaa_diagnostics_path_traversal(self, must_gather_tree):
         # Trigger diagnostics extraction first
-        get_noobaa_resource(str(must_gather_tree["extracted"]), "diagnostics")
+        get_must_gather_resource(str(must_gather_tree["extracted"]), "diagnostics")
         result = json.loads(
-            get_noobaa_resource(
+            get_must_gather_resource(
                 str(must_gather_tree["extracted"]),
                 "diagnostics",
                 name="../../etc/passwd",
@@ -1137,9 +1248,9 @@ class TestPathTraversalGuards:
         assert "escapes" in result["error"]
 
     def test_noobaa_diagnostics_absolute_path(self, must_gather_tree):
-        get_noobaa_resource(str(must_gather_tree["extracted"]), "diagnostics")
+        get_must_gather_resource(str(must_gather_tree["extracted"]), "diagnostics")
         result = json.loads(
-            get_noobaa_resource(
+            get_must_gather_resource(
                 str(must_gather_tree["extracted"]),
                 "diagnostics",
                 name="/etc/passwd",
@@ -1149,7 +1260,7 @@ class TestPathTraversalGuards:
 
     def test_noobaa_logs_path_traversal(self, must_gather_tree):
         result = json.loads(
-            get_noobaa_resource(
+            get_must_gather_resource(
                 str(must_gather_tree["extracted"]),
                 "logs",
                 name="../../../etc/passwd",
@@ -1160,7 +1271,7 @@ class TestPathTraversalGuards:
 
     def test_noobaa_cnpg_path_traversal(self, must_gather_tree):
         result = json.loads(
-            get_noobaa_resource(
+            get_must_gather_resource(
                 str(must_gather_tree["extracted"]),
                 "cnpg",
                 name="../../etc/passwd",
@@ -1273,7 +1384,7 @@ class TestEdgeCases:
         log_file = must_gather_tree["root"] / "noobaa" / "logs" / "openshift-storage" / "noobaa_endpoint.log"
         log_file.write_text("\n".join(f"line {i} " + "x" * 200 for i in range(2000)) + "\n")
         result = json.loads(
-            get_noobaa_resource(
+            get_must_gather_resource(
                 str(must_gather_tree["extracted"]),
                 "logs",
                 name="noobaa_endpoint.log",

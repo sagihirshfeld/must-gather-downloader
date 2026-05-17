@@ -39,11 +39,25 @@ _CEPH_COMMANDS = {
 
 _MAX_RESOURCE_SIZE = 100 * 1024
 
+_NOOBAA_ONLY_TYPES = frozenset({"status", "db_list", "diagnostics", "logs", "cnpg"})
+
+_DUAL_SUBTREE_TYPES = frozenset(
+    {
+        "objectbucketclaim",
+        "objectbucket",
+        "backingstore",
+        "namespacestore",
+        "bucketclass",
+        "noobaa",
+    }
+)
+
 _ALL_SUPPORTED_TYPES = sorted(
     list(_CLUSTER_SCOPED.keys())
     + list(_NAMESPACED.keys())
     + list(_CEPH_COMMANDS.keys())
     + list(_RESOURCE_ALIASES.keys())
+    + list(_NOOBAA_ONLY_TYPES)
     + ["ceph"]
 )
 
@@ -60,18 +74,3 @@ _NOOBAA_NAMESPACED = {
 _NOOBAA_CLUSTER_SCOPED = {
     "objectbucket": "cluster-scoped-resources/objectbucket.io/objectbuckets",
 }
-
-_NOOBAA_RESOURCE_ALIASES = {
-    "obc": "objectbucketclaim",
-    "ob": "objectbucket",
-    "bs": "backingstore",
-    "ns_store": "namespacestore",
-    "bc": "bucketclass",
-}
-
-_ALL_NOOBAA_TYPES = sorted(
-    ["status", "db_list", "diagnostics", "logs", "cnpg"]
-    + list(_NOOBAA_NAMESPACED.keys())
-    + list(_NOOBAA_CLUSTER_SCOPED.keys())
-    + list(_NOOBAA_RESOURCE_ALIASES.keys())
-)

@@ -74,7 +74,7 @@ List the structure of a downloaded must-gather — namespaces, resource types, c
 
 #### `get_must_gather_resource`
 
-Retrieve Kubernetes resources or Ceph command output from a must-gather. Supports cluster-scoped resources (node, pv, sc, objectbucket), namespaced resources (events, pod, configmap, secret, deployment, obc, backingstore, namespacestore, bucketclass, noobaa), and Ceph data (cephhealth, cephstatus, osdtree, osddump). YAML resources are automatically cleaned (managedFields stripped).
+Retrieve Kubernetes resources, Ceph command output, or NooBaa resources from a must-gather. Supports cluster-scoped resources (node, pv, sc, objectbucket), namespaced resources (events, pod, configmap, secret, deployment, obc, backingstore, namespacestore, bucketclass, noobaa), Ceph data (cephhealth, cephstatus, osdtree, osddump), and NooBaa-only types (status, db_list, diagnostics, logs, cnpg). YAML resources are automatically cleaned (managedFields stripped).
 
 | Parameter | Required | Description |
 |---|---|---|
@@ -82,19 +82,8 @@ Retrieve Kubernetes resources or Ceph command output from a must-gather. Support
 | `resource_type` | Yes | Resource type (see above) |
 | `name` | No | Specific resource name (omit to list available) |
 | `namespace` | No | Namespace (required for namespaced resources) |
-| `tail` | No | For events, return only the last N (default: all) |
-
-#### `get_noobaa_resource`
-
-Retrieve NooBaa-specific resources: CLI status, diagnostics tarballs, operator logs, CNPG database info, and NooBaa CRD YAMLs (backingstores, namespacestores, bucketclasses, OBCs).
-
-| Parameter | Required | Description |
-|---|---|---|
-| `must_gather_path` | Yes | Path to the extracted must-gather directory |
-| `resource_type` | Yes | `status`, `db_list`, `diagnostics`, `logs`, `cnpg`, or CRD types (`obc`, `bs`, `ns_store`, `bc`, `noobaa`) |
-| `name` | No | Specific resource or file name (omit to list available) |
-| `namespace` | No | Namespace for CRD resources |
-| `tail` | No | For logs, return only the last N lines (default: all) |
+| `tail` | No | For events, last N events; for NooBaa logs/diagnostics, last N lines (default: all) |
+| `subtree` | No | `auto` (default), `main`, or `noobaa`. Auto-detects: NooBaa-only types use noobaa, overlapping CRD types prefer noobaa if available, others use main |
 
 ### Search
 

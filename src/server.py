@@ -2,7 +2,6 @@ from fastmcp import FastMCP
 
 from .ai_analysis import get_ai_analysis_report as _ai_analysis_impl
 from .download import download_must_gather as _download_impl
-from .noobaa import get_noobaa_resource as _get_noobaa_impl
 from .ocs_ci_logs import get_ocs_ci_test_log as _ocs_ci_log_impl
 from .pod_logs import get_must_gather_pod_logs as _pod_logs_impl
 from .pod_logs import search_pod_logs as _search_pod_logs_impl
@@ -66,14 +65,15 @@ def get_must_gather_resource(
     name: str = "",
     namespace: str = "",
     tail: int = 0,
+    subtree: str = "auto",
 ) -> str:
     """Retrieve a Kubernetes resource or Ceph command output from a must-gather.
 
     Use this for cluster-scoped resources (nodes, PVs, StorageClasses),
-    namespaced resources (pods, events, configmaps, deployments), and Ceph
-    data (ceph status, OSD tree). For NooBaa-specific resources (diagnostics,
-    NooBaa logs, CNPG info, NooBaa CLI status), use get_noobaa_resource
-    instead. For pod logs, use get_must_gather_pod_logs or search_pod_logs.
+    namespaced resources (pods, events, configmaps, deployments), Ceph
+    data (ceph status, OSD tree), and NooBaa resources (status, diagnostics,
+    logs, CNPG info, NooBaa CRD YAMLs). For pod logs, use
+    get_must_gather_pod_logs or search_pod_logs.
 
     YAML resources are automatically cleaned (managedFields stripped).
 
@@ -84,52 +84,22 @@ def get_must_gather_resource(
             deployment, objectbucketclaim/obc, backingstore/bs,
             namespacestore/ns_store, bucketclass/bc, noobaa.
             Ceph: ceph (generic, specify name), cephhealth, cephstatus,
-            osdtree, osddump
+            osdtree, osddump.
+            NooBaa: status, db_list, diagnostics, logs, cnpg
         name: Name of the specific resource (optional — omit to list available names)
         namespace: Namespace for namespaced resources (required for events, pod, etc.)
-        tail: For events, return only the last N events (0 = all, default 0)
+        tail: For events, return only the last N events; for NooBaa
+            logs/diagnostics, return only the last N lines (0 = all, default 0)
+        subtree: Which must-gather subtree to read from. "auto" (default)
+            auto-detects: NooBaa-only types always use noobaa subtree,
+            main-only types always use main, overlapping CRD types prefer
+            noobaa if available. "main" forces the main subtree.
+            "noobaa" forces the noobaa subtree.
 
     Returns:
         JSON string with resource content or available names listing
     """
-    return _get_resource_impl(must_gather_path, resource_type, name, namespace, tail)
-
-
-@mcp.tool
-def get_noobaa_resource(
-    must_gather_path: str,
-    resource_type: str,
-    name: str = "",
-    namespace: str = "",
-    tail: int = 0,
-) -> str:
-    """Retrieve a resource from the NooBaa subtree of a must-gather extraction.
-
-    Use when the failure involves object storage, buckets, backingstores,
-    or namespacestores. Accesses NooBaa-specific data: CLI status output,
-    diagnostics tarballs, NooBaa operator logs, CNPG database info, and
-    NooBaa CRD resources (backingstores, namespacestores, bucketclasses,
-    OBCs). For general Kubernetes resources or Ceph data, use
-    get_must_gather_resource instead.
-
-    Args:
-        must_gather_path: Path to the extracted must-gather directory
-        resource_type: Type of NooBaa resource. Options:
-            status — NooBaa CLI status output
-            db_list — NooBaa database table listing
-            diagnostics — extracted diagnostics tarball (name="" to list, name="<file>" to read)
-            logs — NooBaa log files (name="" to list, name="<file>" to read)
-            cnpg — CNPG database info files (name="" to list, name="<file>" to read)
-            objectbucketclaim/obc, objectbucket/ob, backingstore/bs,
-            namespacestore/ns_store, bucketclass/bc, noobaa — NooBaa CRD YAMLs
-        name: Specific resource or file name (optional — omit to list available)
-        namespace: Namespace for namespaced CRD resources
-        tail: For logs, return only the last N lines (0 = all)
-
-    Returns:
-        JSON string with resource content or available items listing
-    """
-    return _get_noobaa_impl(must_gather_path, resource_type, name, namespace, tail)
+    return _get_resource_impl(must_gather_path, resource_type, name, namespace, tail, subtree)
 
 
 @mcp.tool

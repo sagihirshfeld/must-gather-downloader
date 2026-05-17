@@ -2,19 +2,10 @@ import json
 
 from .navigate import (
     _ensure_noobaa_diagnostics_extracted,
-    _find_must_gather_root,
     _find_noobaa_dir,
 )
-from .resource_maps import (
-    _ALL_NOOBAA_TYPES,
-    _MAX_RESOURCE_SIZE,
-    _NOOBAA_CLUSTER_SCOPED,
-    _NOOBAA_NAMESPACED,
-    _NOOBAA_RESOURCE_ALIASES,
-)
+from .resource_maps import _MAX_RESOURCE_SIZE
 from .resource_utils import (
-    get_cluster_scoped_resource,
-    get_namespaced_resource,
     safe_resolve_path,
     truncate_content,
     truncate_log_from_tail,
@@ -68,39 +59,24 @@ def _list_or_read_from_dir(
     return json.dumps(result)
 
 
-def get_noobaa_resource(
-    must_gather_path: str,
-    resource_type: str,
-    name: str = "",
-    namespace: str = "",
-    tail: int = 0,
-) -> str:
-    """Retrieve a NooBaa-specific resource from the must-gather.
+def handle_noobaa_only_resource(root, rt: str, name: str, tail: int) -> str:
+    """Handle NooBaa-only resource types (status, db_list, diagnostics, logs, cnpg).
 
-    Handles status, db_list, diagnostics, logs, CNPG info, and
-    NooBaa CRD resources (both cluster-scoped and namespaced).
-    Path traversal is prevented for all file-based lookups.
+    These types only exist in the noobaa subtree and have no main-subtree equivalent.
 
     Args:
-        must_gather_path: Path to the must-gather extraction.
-        resource_type: NooBaa resource type or alias (e.g. "status",
-            "diagnostics", "logs", "cnpg", "obc", "bs").
+        root: Must-gather root path (resolved via _find_must_gather_root).
+        rt: Resolved resource type (already lowered and alias-resolved).
         name: Specific file or resource name. Omit to list available.
-        namespace: Required for namespaced CRD resources.
-        tail: For logs, keep only the last N lines (0 = all).
+        tail: For logs/diagnostics, keep only the last N lines (0 = all).
 
     Returns:
-        JSON string with resource content, or a listing of available
-        items if *name* is omitted.
+        JSON string with resource content or listing.
     """
-    root = _find_must_gather_root(must_gather_path)
     try:
         noobaa_dir = _find_noobaa_dir(root)
     except ValueError as e:
         return json.dumps({"error": str(e)})
-
-    rt = resource_type.lower()
-    rt = _NOOBAA_RESOURCE_ALIASES.get(rt, rt)
 
     if rt == "status":
         return _read_raw_file(noobaa_dir, "raw_output/status", "status", "No noobaa/raw_output/status file found")
@@ -194,17 +170,4 @@ def get_noobaa_resource(
             not_found_msg="CNPG info file not found",
         )
 
-    if rt in _NOOBAA_CLUSTER_SCOPED:
-        return get_cluster_scoped_resource(noobaa_dir, rt, name, _NOOBAA_CLUSTER_SCOPED, context_label="noobaa subtree")
-
-    if rt in _NOOBAA_NAMESPACED:
-        return get_namespaced_resource(
-            noobaa_dir / "namespaces", rt, name, namespace, _NOOBAA_NAMESPACED, context_label="noobaa subtree"
-        )
-
-    return json.dumps(
-        {
-            "error": f"Unknown noobaa resource_type '{resource_type}'",
-            "supported_types": _ALL_NOOBAA_TYPES,
-        }
-    )
+    return json.dumps({"error": f"Unknown noobaa-only resource type: '{rt}'"})
