@@ -99,29 +99,11 @@ Grep-like search across all must-gather files (YAML resources, Ceph outputs, con
 | `max_results` | No | Maximum matches to return (default: 50) |
 | `case_sensitive` | No | Case-sensitive search (default: `false`) |
 
-#### `search_pod_logs`
-
-Targeted search within pod logs — returns matching lines with surrounding context. Combines pod-log file discovery with pattern matching.
-
-| Parameter | Required | Description |
-|---|---|---|
-| `must_gather_path` | Yes | Path to the extracted must-gather directory |
-| `namespace` | Yes | Kubernetes namespace |
-| `pod_name` | Yes | Pod name or substring to match |
-| `pattern` | Yes | Regex or literal string to search for |
-| `container` | No | Container name filter |
-| `previous` | No | Search `previous.log` instead (default: `false`) |
-| `context_lines` | No | Lines of context around each match (default: 3) |
-| `max_results` | No | Maximum matches (default: 50) |
-| `case_sensitive` | No | Case-sensitive search (default: `false`) |
-| `time_from` | No | Start time filter (e.g. `03:38:00`) |
-| `time_to` | No | End time filter (e.g. `03:41:00`) |
-
 ### Pod Logs
 
 #### `get_must_gather_pod_logs`
 
-Retrieve full pod log content. Can list available pods (omit `pod_name`) or retrieve logs with container, tail, and time-range filtering.
+Retrieve full pod log content or search within logs for a pattern. Can list available pods (omit `pod_name`), retrieve full logs with tail/time filtering, or search for matching lines with context (when `pattern` is provided).
 
 | Parameter | Required | Description |
 |---|---|---|
@@ -130,9 +112,13 @@ Retrieve full pod log content. Can list available pods (omit `pod_name`) or retr
 | `pod_name` | No | Pod name or substring (omit to list available pods) |
 | `container` | No | Container name filter |
 | `previous` | No | Return `previous.log` (default: `false`) |
-| `tail` | No | Lines from end to return (default: all) |
+| `tail` | No | Lines from end to return, full-log mode only (default: all) |
 | `time_from` | No | Start time filter (e.g. `03:38:00`) |
 | `time_to` | No | End time filter (e.g. `03:41:00`) |
+| `pattern` | No | Regex or literal to search for (omit for full logs) |
+| `context_lines` | No | Lines of context around each match (default: 3, search mode only) |
+| `max_results` | No | Maximum matches (default: 50, search mode only) |
+| `case_sensitive` | No | Case-sensitive search (default: `false`, search mode only) |
 
 ### Test Analysis
 

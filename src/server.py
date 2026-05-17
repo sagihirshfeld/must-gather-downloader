@@ -4,7 +4,6 @@ from .ai_analysis import get_ai_analysis_report as _ai_analysis_impl
 from .download import download_must_gather as _download_impl
 from .ocs_ci_logs import get_ocs_ci_test_log as _ocs_ci_log_impl
 from .pod_logs import get_must_gather_pod_logs as _pod_logs_impl
-from .pod_logs import search_pod_logs as _search_pod_logs_impl
 from .resources import get_must_gather_resource as _get_resource_impl
 from .resources import list_must_gather_contents as _list_contents_impl
 from .search import search_must_gather as _search_impl
@@ -73,7 +72,7 @@ def get_must_gather_resource(
     namespaced resources (pods, events, configmaps, deployments), Ceph
     data (ceph status, OSD tree), and NooBaa resources (status, diagnostics,
     logs, CNPG info, NooBaa CRD YAMLs). For pod logs, use
-    get_must_gather_pod_logs or search_pod_logs.
+    get_must_gather_pod_logs.
 
     YAML resources are automatically cleaned (managedFields stripped).
 
@@ -114,8 +113,8 @@ def search_must_gather(
 
     Use for broad searches across the entire must-gather -- YAML resources,
     Ceph outputs, config files, and logs alike. To search only within pod
-    logs (with pod/container scoping and context lines), use search_pod_logs
-    instead.
+    logs (with pod/container scoping and context lines), use
+    get_must_gather_pod_logs with a pattern instead.
 
     Searches text files for lines matching a regex or literal pattern.
     Binary files are automatically skipped.
@@ -143,13 +142,17 @@ def get_must_gather_pod_logs(
     tail: int = 0,
     time_from: str = "",
     time_to: str = "",
+    pattern: str = "",
+    context_lines: int = 3,
+    max_results: int = 50,
+    case_sensitive: bool = False,
 ) -> str:
     """Retrieve full pod log content from a must-gather extraction.
 
     Use when you need to read complete pod logs or list available pods in a
-    namespace. If you already know what pattern to look for, use
-    search_pod_logs instead -- it returns only matching lines with context,
-    which uses fewer tokens.
+    namespace. Can also search within pod logs for a pattern -- when pattern
+    is provided, returns only matching lines with surrounding context instead
+    of the full log content (more token-efficient for targeted lookups).
 
     Can list available pods (omit pod_name), or retrieve logs for a specific
     pod with optional container, tail, and time-range filtering.
@@ -160,12 +163,22 @@ def get_must_gather_pod_logs(
         pod_name: Pod name or substring to match (empty = list available pods)
         container: Container name filter (empty = all containers)
         previous: If True, return previous.log instead of current.log
-        tail: Number of lines from the end to return (0 = all lines)
+        tail: Number of lines from the end to return (0 = all lines,
+            full-log mode only -- ignored when pattern is provided)
         time_from: Start time filter, e.g. "03:38:00" or "2025-01-15T03:38:00"
         time_to: End time filter, e.g. "03:41:00" or "2025-01-15T03:41:00"
+        pattern: Regex or literal string to search for. When provided,
+            switches to search mode: returns matching lines with context
+            instead of full log content
+        context_lines: Lines of context before and after each match
+            (default 3, search mode only)
+        max_results: Maximum matches to return (default 50, search mode only)
+        case_sensitive: If False (default), search is case-insensitive
+            (search mode only)
 
     Returns:
-        JSON string with available pods list, or pod log contents
+        JSON string with available pods list, pod log contents,
+        or search matches with context
     """
     return _pod_logs_impl(
         must_gather_path,
@@ -176,59 +189,10 @@ def get_must_gather_pod_logs(
         tail,
         time_from,
         time_to,
-    )
-
-
-@mcp.tool
-def search_pod_logs(
-    must_gather_path: str,
-    namespace: str,
-    pod_name: str,
-    pattern: str,
-    container: str = "",
-    previous: bool = False,
-    context_lines: int = 3,
-    max_results: int = 50,
-    case_sensitive: bool = False,
-    time_from: str = "",
-    time_to: str = "",
-) -> str:
-    """Search within pod log files and return matching lines with context.
-
-    Targeted search that combines pod-log file discovery with pattern matching.
-    Returns only matching lines with surrounding context instead of full log
-    content. Fills the gap between get_must_gather_pod_logs (full log) and
-    search_must_gather (all files).
-
-    Args:
-        must_gather_path: Path to the extracted must-gather directory
-        namespace: Kubernetes namespace to look in
-        pod_name: Pod name or substring to match
-        pattern: Regex or literal string to search for
-        container: Container name filter (empty = all containers)
-        previous: If True, search previous.log instead of current.log
-        context_lines: Lines of context before and after each match (default 3)
-        max_results: Maximum matches to return (default 50)
-        case_sensitive: If False (default), search is case-insensitive
-        time_from: Start time filter, e.g. "03:38:00" or "2025-01-15T03:38:00"
-        time_to: End time filter, e.g. "03:41:00" or "2025-01-15T03:41:00"
-
-    Returns:
-        JSON string with matches list, each containing line_number, line,
-        context_before, context_after, pod, container, and log_file
-    """
-    return _search_pod_logs_impl(
-        must_gather_path,
-        namespace,
-        pod_name,
         pattern,
-        container,
-        previous,
         context_lines,
         max_results,
         case_sensitive,
-        time_from,
-        time_to,
     )
 
 

@@ -77,160 +77,18 @@ def _find_pod_log_files(
     return results
 
 
-def get_must_gather_pod_logs(
-    must_gather_path: str,
-    namespace: str,
-    pod_name: str = "",
-    container: str = "",
-    previous: bool = False,
-    tail: int = 0,
-    time_from: str = "",
-    time_to: str = "",
-) -> str:
-    """Retrieve pod logs from a must-gather extraction.
-
-    Lists available pods when *pod_name* is empty, or returns log
-    content with optional container, tail, and time-range filtering.
-    Large logs are automatically truncated from the head.
-
-    Args:
-        must_gather_path: Path to the must-gather extraction.
-        namespace: Kubernetes namespace to look in.
-        pod_name: Pod name or substring to match. Empty lists pods.
-        container: Container name filter. Empty includes all.
-        previous: If True, read ``previous.log`` instead of ``current.log``.
-        tail: Number of lines to keep from the end (0 = all).
-        time_from: Inclusive start time filter (e.g. "03:38:00").
-        time_to: Inclusive end time filter (e.g. "03:41:00").
-
-    Returns:
-        JSON string with pod list or log contents and metadata.
-    """
-    pods_dir, error, available_ns = _find_pods_dir(must_gather_path, namespace)
-    if pods_dir is None:
-        return json.dumps(
-            {
-                "error": error,
-                "available_namespaces": available_ns,
-            }
-        )
-
-    all_pods = sorted(d.name for d in pods_dir.iterdir() if d.is_dir())
-
-    if not pod_name:
-        return json.dumps(
-            {
-                "namespace": namespace,
-                "available_pods": all_pods,
-                "hint": "Specify pod_name to retrieve logs",
-            }
-        )
-
-    matched_pods = [p for p in all_pods if pod_name in p]
-    if not matched_pods:
-        return json.dumps(
-            {
-                "error": f"No pods matching '{pod_name}' found",
-                "namespace": namespace,
-                "available_pods": all_pods,
-            }
-        )
-
-    log_files = _find_pod_log_files(pods_dir, pod_name, container, previous)
-    logs = []
-
-    for lf in log_files:
-        content = lf.path.read_text(encoding="utf-8", errors="replace")
-
-        if time_from or time_to:
-            content, _total, _matched = _filter_log_by_time(content, time_from, time_to)
-
-        content, truncated = truncate_log_from_tail(content, tail)
-
-        line_count = len(content.splitlines())
-        logs.append(
-            {
-                "pod": lf.pod,
-                "container": lf.container,
-                "log_file": lf.log_file,
-                "lines": line_count,
-                "content": content,
-                "truncated": truncated,
-            }
-        )
-
-    result = {
-        "namespace": namespace,
-        "pod_name": pod_name,
-        "logs": logs,
-        "total_logs_found": len(logs),
-    }
-    if time_from:
-        result["time_from"] = time_from
-    if time_to:
-        result["time_to"] = time_to
-    return json.dumps(result)
-
-
-def search_pod_logs(
-    must_gather_path: str,
+def _search_in_pod_logs(
+    log_files: list[_PodLogFile],
+    pattern: str,
     namespace: str,
     pod_name: str,
-    pattern: str,
-    container: str = "",
-    previous: bool = False,
-    context_lines: int = 3,
-    max_results: int = 50,
-    case_sensitive: bool = False,
-    time_from: str = "",
-    time_to: str = "",
+    context_lines: int,
+    max_results: int,
+    case_sensitive: bool,
+    time_from: str,
+    time_to: str,
 ) -> str:
-    """Search within pod log files and return matching lines with context.
-
-    Combines pod-log file discovery with targeted pattern matching,
-    returning only the relevant lines instead of the full log content.
-
-    Args:
-        must_gather_path: Path to the must-gather extraction.
-        namespace: Kubernetes namespace.
-        pod_name: Pod name or substring to match.
-        pattern: Regex or literal string to search for.
-        container: Container name filter. Empty searches all.
-        previous: If True, search ``previous.log`` instead of ``current.log``.
-        context_lines: Lines of context before and after each match.
-        max_results: Maximum total matches to return.
-        case_sensitive: Case-sensitive matching (default False).
-        time_from: Only search lines at or after this time.
-        time_to: Only search lines at or before this time.
-
-    Returns:
-        JSON string with matches grouped by pod/container.
-    """
-    if not pattern:
-        return json.dumps({"error": "pattern parameter is required"})
-
-    pods_dir, error, available_ns = _find_pods_dir(must_gather_path, namespace)
-    if pods_dir is None:
-        return json.dumps(
-            {
-                "error": error,
-                "available_namespaces": available_ns,
-            }
-        )
-
-    all_pods = sorted(d.name for d in pods_dir.iterdir() if d.is_dir())
-    matched_pods = [p for p in all_pods if pod_name in p]
-    if not matched_pods:
-        return json.dumps(
-            {
-                "error": f"No pods matching '{pod_name}' found",
-                "namespace": namespace,
-                "available_pods": all_pods,
-            }
-        )
-
-    log_files = _find_pod_log_files(pods_dir, pod_name, container, previous)
-
+    """Search within discovered pod log files for a pattern."""
     flags = 0 if case_sensitive else re.IGNORECASE
     try:
         compiled = re.compile(pattern, flags)
@@ -304,3 +162,121 @@ def search_pod_logs(
             "truncated": truncated,
         }
     )
+
+
+def get_must_gather_pod_logs(
+    must_gather_path: str,
+    namespace: str,
+    pod_name: str = "",
+    container: str = "",
+    previous: bool = False,
+    tail: int = 0,
+    time_from: str = "",
+    time_to: str = "",
+    pattern: str = "",
+    context_lines: int = 3,
+    max_results: int = 50,
+    case_sensitive: bool = False,
+) -> str:
+    """Retrieve pod logs or search within them from a must-gather extraction.
+
+    Lists available pods when *pod_name* is empty. When *pattern* is
+    provided, returns matching lines with surrounding context (search
+    mode). Otherwise returns full log content with optional tail and
+    time-range filtering.
+
+    Args:
+        must_gather_path: Path to the must-gather extraction.
+        namespace: Kubernetes namespace to look in.
+        pod_name: Pod name or substring to match. Empty lists pods.
+        container: Container name filter. Empty includes all.
+        previous: If True, read ``previous.log`` instead of ``current.log``.
+        tail: Lines from the end to return, full-log mode only (0 = all).
+        time_from: Inclusive start time filter (e.g. "03:38:00").
+        time_to: Inclusive end time filter (e.g. "03:41:00").
+        pattern: Regex or literal to search for. Empty means full-log mode.
+        context_lines: Context lines around each match, search mode only.
+        max_results: Max matches to return, search mode only.
+        case_sensitive: Case-sensitive matching, search mode only.
+
+    Returns:
+        JSON string with pod list, log contents, or search matches.
+    """
+    pods_dir, error, available_ns = _find_pods_dir(must_gather_path, namespace)
+    if pods_dir is None:
+        return json.dumps(
+            {
+                "error": error,
+                "available_namespaces": available_ns,
+            }
+        )
+
+    all_pods = sorted(d.name for d in pods_dir.iterdir() if d.is_dir())
+
+    if not pod_name:
+        return json.dumps(
+            {
+                "namespace": namespace,
+                "available_pods": all_pods,
+                "hint": "Specify pod_name to retrieve logs",
+            }
+        )
+
+    matched_pods = [p for p in all_pods if pod_name in p]
+    if not matched_pods:
+        return json.dumps(
+            {
+                "error": f"No pods matching '{pod_name}' found",
+                "namespace": namespace,
+                "available_pods": all_pods,
+            }
+        )
+
+    log_files = _find_pod_log_files(pods_dir, pod_name, container, previous)
+
+    if pattern:
+        return _search_in_pod_logs(
+            log_files,
+            pattern,
+            namespace,
+            pod_name,
+            context_lines,
+            max_results,
+            case_sensitive,
+            time_from,
+            time_to,
+        )
+
+    logs = []
+
+    for lf in log_files:
+        content = lf.path.read_text(encoding="utf-8", errors="replace")
+
+        if time_from or time_to:
+            content, _total, _matched = _filter_log_by_time(content, time_from, time_to)
+
+        content, truncated = truncate_log_from_tail(content, tail)
+
+        line_count = len(content.splitlines())
+        logs.append(
+            {
+                "pod": lf.pod,
+                "container": lf.container,
+                "log_file": lf.log_file,
+                "lines": line_count,
+                "content": content,
+                "truncated": truncated,
+            }
+        )
+
+    result = {
+        "namespace": namespace,
+        "pod_name": pod_name,
+        "logs": logs,
+        "total_logs_found": len(logs),
+    }
+    if time_from:
+        result["time_from"] = time_from
+    if time_to:
+        result["time_to"] = time_to
+    return json.dumps(result)
