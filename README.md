@@ -62,10 +62,6 @@ Download and extract must-gather logs from a ReportPortal test failure.
 
 **Returns:** `path`, `test_name`, `cluster_name`, `tarball_url`, `cached`, `files_count`
 
-#### `list_must_gather_cache`
-
-List all cached must-gather extractions with test names, paths, timestamps, and sizes.
-
 #### `list_must_gather_contents`
 
 List the structure of a downloaded must-gather — namespaces, resource types, ceph data, NooBaa sections, and pod counts.

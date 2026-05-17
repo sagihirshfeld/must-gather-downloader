@@ -1,7 +1,6 @@
 from fastmcp import FastMCP
 
 from .ai_analysis import get_ai_analysis_report as _ai_analysis_impl
-from .cache import list_must_gather_cache as _list_cache_impl
 from .download import download_must_gather as _download_impl
 from .noobaa import get_noobaa_resource as _get_noobaa_impl
 from .ocs_ci_logs import get_ocs_ci_test_log as _ocs_ci_log_impl
@@ -39,21 +38,6 @@ def download_must_gather(reportportal_url: str, force_redownload: bool = False) 
         cached (bool), and files_count
     """
     return _download_impl(reportportal_url, force_redownload)
-
-
-@mcp.tool
-def list_must_gather_cache() -> str:
-    """List all cached must-gather extractions.
-
-    Shows what has already been downloaded and is available for analysis,
-    including the local path, test name, cluster, and download timestamp.
-
-    Returns:
-        JSON string with a list of cached entries, each containing
-        test_item_id, test_name, cluster_name, path, downloaded_at,
-        and size_mb
-    """
-    return _list_cache_impl()
 
 
 @mcp.tool
