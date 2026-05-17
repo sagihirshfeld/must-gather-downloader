@@ -147,15 +147,13 @@ def get_must_gather_pod_logs(
     max_results: int = 50,
     case_sensitive: bool = False,
 ) -> str:
-    """Retrieve full pod log content from a must-gather extraction.
+    """Retrieve pod log content or search within pod logs from a must-gather.
 
-    Use when you need to read complete pod logs or list available pods in a
-    namespace. Can also search within pod logs for a pattern -- when pattern
-    is provided, returns only matching lines with surrounding context instead
-    of the full log content (more token-efficient for targeted lookups).
-
-    Can list available pods (omit pod_name), or retrieve logs for a specific
-    pod with optional container, tail, and time-range filtering.
+    Can list available pods (omit pod_name), retrieve full logs for a
+    specific pod with container/tail/time-range filtering, or search within
+    pod logs for a pattern -- when pattern is provided, returns only matching
+    lines with surrounding context instead of full log content (more
+    token-efficient for targeted lookups).
 
     Args:
         must_gather_path: Path to the extracted must-gather directory
